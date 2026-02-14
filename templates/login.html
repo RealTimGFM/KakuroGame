@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KakuroGame - Login</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="grid-bg"></div>
+    <div class="container">
+        <div class="form-card">
+            <h1 class="logo">KakuroGame</h1>
+            <p class="subtitle">Welcome back, puzzler</p>
+
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category }}">{{ message }}</div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            <form method="POST" action="{{ url_for('login') }}">
+                <div class="input-group">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" name="username" required>
+                </div>
+                <div class="input-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" name="password" required>
+                </div>
+                <button type="submit" class="btn">Login</button>
+            </form>
+
+            <div class="switch-link">
+                <p>Don't have an account? <a href="{{ url_for('signup') }}">Sign Up</a></p>
+            </div>
+
+            <div class="guest-link">
+                <a href="#">Play as Guest</a>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KakuroGame - Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="grid-bg"></div>
+    <div class="container">
+        <div class="form-card">
+            <h1 class="logo">KakuroGame</h1>
+            <p class="subtitle">Welcome, {{ username }}!</p>
+            <p class="info-text">You are logged in and ready to play.</p>
+            <a href="{{ url_for('logout') }}" class="btn btn-logout">Logout</a>
+        </div>
+    </div>
+</body>
+</html>
