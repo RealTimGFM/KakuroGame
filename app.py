@@ -64,7 +64,7 @@ def signup():
             flash("Email already registered.", "error")
             return redirect(url_for("signup"))
 
-        hashed = generate_password_hash(password)
+        hashed = generate_password_hash(password, method="pbkdf2:sha256")
         user_id = db.create_user(username, email, hashed)
 
         session["user_id"] = user_id
