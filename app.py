@@ -19,10 +19,10 @@ def home():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        username = request.form["username"]
+        email = request.form["email"]
         password = request.form["password"]
 
-        user = db.get_user_by_username(username)
+        user = db.get_user_by_email(email)
 
         if user and check_password_hash(user["password_hash"], password):
             session["user_id"] = user["id"]
@@ -30,7 +30,7 @@ def login():
             flash("Login successful!", "success")
             return redirect(url_for("dashboard"))
         else:
-            flash("Invalid username or password.", "error")
+            flash("Invalid email or password.", "error")
             return redirect(url_for("login"))
 
     return render_template("login.html")
