@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>KakuroGame - Login</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
+
 <body>
     <div class="grid-bg"></div>
     <div class="container">
@@ -14,11 +16,11 @@
             <p class="subtitle">Welcome back, puzzler</p>
 
             {% with messages = get_flashed_messages(with_categories=true) %}
-                {% if messages %}
-                    {% for category, message in messages %}
-                        <div class="alert alert-{{ category }}">{{ message }}</div>
-                    {% endfor %}
-                {% endif %}
+            {% if messages %}
+            {% for category, message in messages %}
+            <div class="alert alert-{{ category }}">{{ message }}</div>
+            {% endfor %}
+            {% endif %}
             {% endwith %}
 
             <form method="POST" action="{{ url_for('login') }}">
@@ -38,9 +40,10 @@
             </div>
 
             <div class="guest-link">
-                <a href="#">Play as Guest</a>
+                <a href="{{ url_for('play_guest') }}">Play as Guest</a>
             </div>
         </div>
     </div>
 </body>
+
 </html>
