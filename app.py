@@ -3,7 +3,64 @@ from database import Database
 from registered_user import RegisteredUser
 from progression import Progression
 import os
+import json as _json
 from puzzle_importer import import_puzzles_from_file
+
+
+# Parse puzzle_data JSON string and build a 2D grid list for template rendering.
+# Each cell is a dict with: cell_type ("black"|"clue"|"play"),
+# Returns (grid_rows, w, h) or (None, 0, 0)
+def build_puzzle_grid(puzzle_data_str):
+    try:
+        pd = _json.loads(puzzle_data_str)
+        w = pd["w"]
+        h = pd["h"]
+        clues = pd["clues"]
+        mask = pd["mask"]
+    except Exception:
+        return None, 0, 0
+
+    grid = []
+    for r in range(h):
+        row_cells = []
+        for c in range(w):
+            i = r * w + c
+            clue_tok = clues[i]
+            mask_bit = mask[i]
+
+            if clue_tok != ".":
+                parts = clue_tok.split("/")
+                d_val = int(parts[0])
+                r_val = int(parts[1])
+                row_cells.append({
+                    "cell_type": "clue",
+                    "clue_down": d_val if d_val > 0 else "",
+                    "clue_right": r_val if r_val > 0 else "",
+                    "row": r,
+                    "col": c,
+                    "flat_idx": i,
+                })
+            elif mask_bit == "0":
+                row_cells.append({
+                    "cell_type": "play",
+                    "clue_down": "",
+                    "clue_right": "",
+                    "row": r,
+                    "col": c,
+                    "flat_idx": i,
+                })
+            else:
+                row_cells.append({
+                    "cell_type": "black",
+                    "clue_down": "",
+                    "clue_right": "",
+                    "row": r,
+                    "col": c,
+                    "flat_idx": i,
+                })
+        grid.append(row_cells)
+    return grid, w, h
+
 
 def create_app(db_path=None, testing=False):
     app = Flask(__name__)
@@ -107,16 +164,13 @@ def create_app(db_path=None, testing=False):
             if not p.checkSeed(seed):
                 return render_template("seed_entry.html", error="seed not found")
 
-            # Normalize to canonical UUID form.
             import uuid as _uuid
             seed_norm = str(_uuid.UUID(seed))
 
             if session.get("is_guest") is True:
                 return redirect(url_for("seed_confirm", seed=seed_norm))
-
-            # Logged-in: enter seeded mode immediately.
             progression_service.enterSeededMode(seed_norm)
-            return redirect(url_for("dashboard"))
+            return redirect(url_for("seed_play"))
 
         return render_template("seed_entry.html", error=None)
 
@@ -130,9 +184,30 @@ def create_app(db_path=None, testing=False):
 
         if request.method == "POST":
             progression_service.enterSeededMode(seed)
-            return redirect(url_for("dashboard"))
+            return redirect(url_for("seed_play"))
 
         return render_template("seed_confirm.html", seed=seed)
+
+    # Show the seeded puzzle play page.
+    # Reads the seed from session, fetches puzzle data from DB,
+    # parses puzzle_data JSON and builds the 2D grid for the template.
+    @app.route("/seed/play", methods=["GET"])
+    def seed_play():
+        if not _is_authenticated():
+            return redirect(url_for("login"))
+
+        seed = session.get("seeded_puzzle_seed")
+        if not seed:
+            return redirect(url_for("dashboard"))
+
+        from puzzle import Puzzle
+        p = Puzzle(db)
+        if not p.checkSeed(seed):
+            return render_template("seed_play.html", error="seed not found", puzzle=None, grid=None, grid_w=0, grid_h=0)
+
+        puzzle = p.displayPuzzle()
+        grid, grid_w, grid_h = build_puzzle_grid(puzzle["puzzle_data"])
+        return render_template("seed_play.html", error=None, puzzle=puzzle, grid=grid, grid_w=grid_w, grid_h=grid_h)
 
     # Back to Campaign: exit seeded mode and return to the dashboard.
     @app.route("/seed/back", methods=["POST"])

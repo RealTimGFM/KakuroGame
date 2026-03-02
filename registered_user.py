@@ -29,6 +29,8 @@ class RegisteredUser:
             return False
         return check_password_hash(user["password_hash"], password)
 
+    # Authenticate an existing user and populate the session.
+    # Removes is_guest so the session is no longer treated as a guest.
     def login(self, email: str, password: str) -> bool:
         e = (email or "").strip().lower()
         user = self.db.get_user_by_email(e)
@@ -39,9 +41,12 @@ class RegisteredUser:
 
         session["user_id"] = user["id"]
         session["username"] = user["username"]
+        session.pop("is_guest", None)
         self.showOkMsg("Login successful!")
         return True
 
+    # Create a new account and populate the session.
+    # Removes is_guest so the session is no longer treated as a guest.
     def createAccount(self, username: str, email: str, password: str, confirm_password: str) -> Optional[int]:
         username = (username or "").strip()
         email = (email or "").strip().lower()
@@ -78,5 +83,6 @@ class RegisteredUser:
 
         session["user_id"] = user_id
         session["username"] = username
+        session.pop("is_guest", None)
         self.showOkMsg("Account created successfully!")
         return user_id
