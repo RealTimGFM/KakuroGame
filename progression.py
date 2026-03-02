@@ -46,7 +46,6 @@ class Progression:
             session["guest_level"] = lvl
 
     def loadProgression(self, user_id: int):
-        # Guest -> Registered migration
         self.db.ensure_progression_row(user_id)
 
         guest_mode = session.get("guest_mode")
@@ -67,7 +66,6 @@ class Progression:
         session.pop("guest_games", None)
         session.pop("guest_mode", None)
         session.pop("guest_level", None)
-
     def enterPuzzleSeed(self, seed: str) -> Optional[Dict[str, Any]]:
         p = Puzzle(self.db)
         if not p.checkSeed(seed):
@@ -81,7 +79,7 @@ class Progression:
             self.displayError("Puzzle load failed.")
             return None
 
-        seed_norm = payload["seed"]  # IMPORTANT: use normalized UUID from Puzzle
+        seed_norm = payload["seed"]
 
         uid = session.get("user_id")
         if isinstance(uid, int):
@@ -95,3 +93,30 @@ class Progression:
             session["guest_games"] = games
 
         return payload
+
+    # Enter seeded mode: load the puzzle and store the seed in the session.
+    # Returns the puzzle payload dict, or None if the seed is invalid.
+    def enterSeededMode(self, seed: str) -> Optional[Dict[str, Any]]:
+        payload = self.enterPuzzleSeed(seed)
+        if payload is None:
+            return None
+        session["seeded_puzzle_seed"] = payload["seed"]
+        return payload
+
+    # Exit seeded mode: clear the seeded seed from session and return to Campaign.
+    def exitSeededMode(self):
+        session.pop("seeded_puzzle_seed", None)
+        self.returnCampaign()
+
+    # Called when a seeded puzzle is completed.
+    # Logged-in: restores Campaign mode (keeps their DB campaign level).
+    # Guest: resets to Campaign mode at level 1.
+    def completeSeededPuzzle(self):
+        session.pop("seeded_puzzle_seed", None)
+        uid = session.get("user_id")
+        if isinstance(uid, int):
+            self.db.ensure_progression_row(uid)
+            self.db.set_mode(uid, "Campaign")
+        else:
+            session["guest_mode"] = "Campaign"
+            session["guest_level"] = 1
