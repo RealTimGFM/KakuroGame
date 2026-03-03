@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KakuroGame - Seeded Puzzle</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="grid-bg"></div>
+    <div class="container" style="max-width:600px;">
+        <div class="form-card">
+            <h1 class="logo">KakuroGame</h1>
+            <p class="subtitle">Seeded Puzzle</p>
+
+            {% if error %}
+                <div class="alert alert-error">{{ error }}</div>
+                <div class="switch-link">
+                    <p><a href="{{ url_for('seed_entry') }}">Try another seed</a> &nbsp;|&nbsp; <a href="{{ url_for('dashboard') }}">Back to Menu</a></p>
+                </div>
+            {% else %}
+                <p class="info-text">
+                    Seed: <strong style="color:#e2b714;font-size:0.75rem;word-break:break-all;">{{ puzzle.seed }}</strong>
+                </p>
+                <p class="info-text">
+                    {{ puzzle.difficulty }} &nbsp;|&nbsp; Level {{ puzzle.campaign_level }}
+                </p>
+
+                {% if grid %}
+                <div class="kakuro-board-wrap">
+                    <table class="kakuro-board" id="kakuro-grid">
+                        {% for row in grid %}
+                        <tr>
+                            {% for cell in row %}
+                                {% if cell.cell_type == "black" %}
+                                    <td class="kc-black"></td>
+                                {% elif cell.cell_type == "clue" %}
+                                    <td class="kc-clue">
+                                        <div class="kc-clue-inner">
+                                            <span class="kc-down">{% if cell.clue_down %}{{ cell.clue_down }}{% endif %}</span>
+                                            <span class="kc-right">{% if cell.clue_right %}{{ cell.clue_right }}{% endif %}</span>
+                                        </div>
+                                    </td>
+                                {% else %}
+                                    <td class="kc-play">
+                                        <input
+                                            class="kc-input"
+                                            type="text"
+                                            inputmode="numeric"
+                                            maxlength="1"
+                                            pattern="[1-9]"
+                                            name="cell_{{ cell.flat_idx }}"
+                                            id="cell_{{ cell.flat_idx }}"
+                                            autocomplete="off"
+                                        >
+                                    </td>
+                                {% endif %}
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                    </table>
+                </div>
+                {% else %}
+                <div class="alert alert-error">Puzzle data could not be loaded.</div>
+                {% endif %}
+
+                <form method="POST" action="{{ url_for('seed_complete') }}" style="margin-top:20px;">
+                    <button type="submit" class="btn">Complete Seeded Puzzle</button>
+                </form>
+
+                <form method="POST" action="{{ url_for('seed_back') }}" style="margin-top:10px;">
+                    <button type="submit" class="btn btn-logout">Back to Campaign</button>
+                </form>
+            {% endif %}
+        </div>
+    </div>
+
+    <script>
+    /* Filter non-digit input on playable cells */
+    document.querySelectorAll(".kc-input").forEach(function(inp) {
+        inp.addEventListener("input", function() {
+            this.value = this.value.replace(/[^1-9]/g, "").slice(-1);
+        });
+    });
+    </script>
+</body>
+</html>

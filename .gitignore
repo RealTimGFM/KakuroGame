@@ -1,5 +1,5 @@
 dump.txt
-project_dump.py
+dump_project.py
 pycache/
 __pycache__/
 .venv/
@@ -8,3 +8,4 @@ venv/
 env/
 .pytest_cache/
 *.db
+.vscode/

@@ -181,3 +181,110 @@ body {
 .guest-link a:hover {
     color: #7a7aae;
 }
+
+/* ── Kakuro board ── */
+
+.kakuro-board-wrap {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 20px;
+    overflow-x: auto;
+}
+
+.kakuro-board {
+    border-collapse: collapse;
+}
+
+.kakuro-board td {
+    width: 52px;
+    height: 52px;
+    border: 1px solid #2a2a4a;
+    padding: 0;
+}
+
+/* Black (blocked) cell */
+.kc-black {
+    background: #0d0d1a;
+}
+
+/* Clue cell — dark background with "\" diagonal divider */
+.kc-clue {
+    background: #0d0d1a;
+    position: relative;
+    overflow: hidden;
+}
+
+/*
+ * Diagonal line: anchored at top-left corner, rotated 45° clockwise.
+ * This produces a "\" (top-left → bottom-right) divider.
+ * Width covers the full diagonal of a 52x52 cell (52 * √2 ≈ 74px).
+ */
+.kc-clue::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 74px;
+    height: 1px;
+    background: #4a4a6a;
+    transform-origin: top left;
+    transform: rotate(45deg);
+    pointer-events: none;
+}
+
+.kc-clue-inner {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+}
+
+/*
+ * Token "A/B": A is the DOWN-sum (column below) → bottom-left triangle.
+ * B is the RIGHT-sum (row to the right) → top-right triangle.
+ */
+
+/* A — down-sum: bottom-left */
+.kc-down {
+    position: absolute;
+    bottom: 3px;
+    left: 4px;
+    font-size: 0.65rem;
+    color: #e2b714;
+    font-weight: 600;
+    line-height: 1;
+}
+
+/* B — right-sum: top-right */
+.kc-right {
+    position: absolute;
+    top: 3px;
+    right: 4px;
+    font-size: 0.65rem;
+    color: #e2b714;
+    font-weight: 600;
+    line-height: 1;
+}
+
+/* Playable input cell */
+.kc-play {
+    background: #1e1e32;
+}
+
+.kc-input {
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: #e0e0e0;
+    font-size: 1.2rem;
+    font-weight: 600;
+    text-align: center;
+    cursor: text;
+    caret-color: #e2b714;
+}
+
+.kc-input:focus {
+    background: rgba(226, 183, 20, 0.08);
+}

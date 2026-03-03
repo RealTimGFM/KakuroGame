@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>KakuroGame - Dashboard</title>
+    <title>KakuroGame - Game Menu</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
@@ -12,8 +12,23 @@
         <div class="form-card">
             <h1 class="logo">KakuroGame</h1>
             <p class="subtitle">Welcome, {{ username }}!</p>
-            <p class="info-text">You are logged in and ready to play.</p>
-            <a href="{{ url_for('logout') }}" class="btn btn-logout">Logout</a>
+
+            {% if is_guest %}
+                <p class="info-text">You are playing as a guest. Progress resets when the session ends.</p>
+            {% else %}
+                <p class="info-text">Choose a mode to start playing.</p>
+            {% endif %}
+
+            <!-- Menu buttons (frontend only for now) -->
+            <a href="#" class="btn">Campaign</a>
+            <a href="#" class="btn">New Run</a>
+            <a href="{{ url_for('seed_entry') }}" class="btn">Play a Puzzle</a>
+            <a href="#" class="btn">Setting</a>
+
+            <!-- Exit -->
+            <a href="{{ url_for('logout') }}" class="btn btn-logout">
+                {% if is_guest %}Exit Guest{% else %}Logout{% endif %}
+            </a>
         </div>
     </div>
 </body>
