@@ -9,3 +9,5 @@ env/
 .pytest_cache/
 *.db
 .vscode/
+~$*.docx
+~$*.xlsx
