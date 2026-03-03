@@ -11,3 +11,4 @@ env/
 .vscode/
 ~$*.docx
 ~$*.xlsx
+.DS_Store
