@@ -2,7 +2,6 @@
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-import uuid
 import pytest
 from app import create_app
 from database import Database
@@ -26,8 +25,9 @@ def db(app):
 
 
 @pytest.fixture
-def seed_uuid():
-    return str(uuid.uuid4())
+def seed_code():
+    # 6-char seed: lowercase letters + digits
+    return "3fu9a4"
 
 
 def insert_puzzle(db: Database, seed: str, puzzle_data: str = "{}"):
@@ -39,3 +39,8 @@ def insert_puzzle(db: Database, seed: str, puzzle_data: str = "{}"):
     )
     con.commit()
     con.close()
+
+@pytest.fixture
+def seed_uuid(seed_code):
+    # Alias for older test name; seed must be 6 chars [0-9a-z]
+    return seed_code

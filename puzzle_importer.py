@@ -1,11 +1,9 @@
 import json
 import os
 import re
-import uuid
+import hashlib
 from typing import Any, Dict, List, Optional, Tuple
 
-
-KAKURO_NAMESPACE = uuid.UUID("f3f7d6a3-7b3b-4f3a-a9ad-7d7d39e3f1cb")
 
 
 # Read the import JSON file and return the root object.
@@ -19,13 +17,29 @@ def load_import_json(path: str) -> Optional[Dict[str, Any]]:
     except Exception as e:
         print(f"import error: failed to read {path}: {e}")
         return None
+    
 
+# Make a stable 6-char seed code from v.
+# Rule: lowercase letters + digits only (0-9, a-z), length = 6.
+# Same v -> same seed every time (deterministic), so we don't re-insert duplicates on restart.
+def derive_seed_from_v(v: Any, attempt: int = 0) -> str:
+    raw = "kakuro:" + str(v)
+    if attempt > 0:
+        raw = raw + ":" + str(attempt)
 
-# Make a stable UUID seed from v.
-# Same v -> same seed every time, using uuid5(namespace, "kakuro:" + str(v)).
-def derive_seed_from_v(v: Any) -> str:
-    name = "kakuro:" + str(v)
-    return str(uuid.uuid5(KAKURO_NAMESPACE, name))
+    # Use a stable hash so the output looks "random" but is deterministic.
+    digest = hashlib.sha256(raw.encode("utf-8")).digest()
+
+    # Map 64 bits into base36^6 space.
+    space = 36 ** 6
+    n = int.from_bytes(digest[:8], "big") % space
+
+    alphabet = "0123456789abcdefghijklmnopqrstuvwxyz"
+    out = []
+    for _ in range(6):
+        n, r = divmod(n, 36)
+        out.append(alphabet[r])
+    return "".join(reversed(out))
 
 
 # Split one row string into tokens and make sure it has exactly w tokens.
@@ -229,9 +243,19 @@ def import_puzzles_from_file(db, path: str) -> None:
             print(f"import error puzzle {v}: {err}")
             continue
 
-        seed = derive_seed_from_v(v)
-        if db.get_puzzle_by_seed(seed) is not None:
-            print(f"skip puzzle {v}")
+        # Make a deterministic seed for this puzzle.
+        # If a collision happens (super rare), bump attempt until we find a free seed.
+        attempt = 0
+        seed = derive_seed_from_v(v, attempt)
+        while db.get_puzzle_by_seed(seed) is not None:
+            attempt += 1
+            if attempt > 1000:
+                print(f"import error puzzle {v}: cannot find a unique seed after 1000 attempts")
+                seed = None
+                break
+            seed = derive_seed_from_v(v, attempt)
+
+        if seed is None:
             continue
 
         w = puz["w"]

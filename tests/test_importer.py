@@ -1,8 +1,7 @@
 # What it does: Tests the JSON importer that stores puzzle data and solution data in separate tables.
 # Expected outcome: puzzles.puzzle_data has no "digits", and puzzle_solutions.solution_data contains "digits".
 import json
-import uuid
-from puzzle_importer import import_puzzles_from_file, KAKURO_NAMESPACE
+from puzzle_importer import import_puzzles_from_file, derive_seed_from_v
 
 
 def test_importer_inserts_puzzle_and_solution_separately(tmp_path, db):
@@ -31,7 +30,7 @@ def test_importer_inserts_puzzle_and_solution_separately(tmp_path, db):
 
     import_puzzles_from_file(db, str(f))
 
-    seed = str(uuid.uuid5(KAKURO_NAMESPACE, "kakuro:123"))
+    seed = derive_seed_from_v(123)
 
     con = db.get_connection()
     cur = con.cursor()

@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>KakuroGame - Play a Puzzle</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
+
 <body>
     <div class="grid-bg"></div>
     <div class="container">
@@ -14,13 +16,13 @@
             <p class="subtitle">Enter a puzzle seed</p>
 
             {% if error %}
-                <div class="alert alert-error">{{ error }}</div>
+            <div class="alert alert-error">{{ error }}</div>
             {% endif %}
 
             <form method="POST" action="{{ url_for('seed_entry') }}">
                 <div class="input-group">
-                    <label for="seed">Puzzle Seed (UUID)</label>
-                    <input type="text" id="seed" name="seed" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" required>
+                    <label for="seed">Puzzle Seed (6 chars)</label>
+                    <input type="text" id="seed" name="seed" placeholder="3fu9a4" required>
                 </div>
                 <button type="submit" class="btn">Load Puzzle</button>
             </form>
@@ -31,4 +33,5 @@
         </div>
     </div>
 </body>
+
 </html>

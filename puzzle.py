@@ -1,5 +1,5 @@
-import uuid
 from typing import Optional, Dict, Any
+import re
 
 
 class Puzzle:
@@ -8,17 +8,18 @@ class Puzzle:
         self._row = None
         self._seed_norm = None
 
-    def _normalize_uuid(self, seed: str) -> Optional[str]:
-        s = (seed or "").strip()
+    # Normalize and validate a seed code.
+    # Rule: exactly 6 chars, lowercase letters + digits only (0-9, a-z).
+    def _normalize_seed(self, seed: str) -> Optional[str]:
+        s = (seed or "").strip().lower()
         if not s:
             return None
-        try:
-            return str(uuid.UUID(s)) 
-        except Exception:
+        if re.fullmatch(r"[0-9a-z]{6}", s) is None:
             return None
+        return s
 
     def checkSeed(self, seed: str) -> bool:
-        norm = self._normalize_uuid(seed)
+        norm = self._normalize_seed(seed)
         if not norm:
             self._row = None
             self._seed_norm = None

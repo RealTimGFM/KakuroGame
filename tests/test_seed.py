@@ -1,6 +1,5 @@
 # tests/test_seed.py
-
-# What it does: Tests Use Case 3 — load a specific puzzle by seed (UUID).
+# What it does: Tests Use Case 3 — load a specific puzzle by seed (6-char code).
 # Covers: auth guard, bad seed error, guest confirm flow, logged-in direct load,
 #         /seed/play page, Back to Campaign, post-completion progression reset,
 #         is_guest clearing on login/signup, and Kakuro board grid rendering.
@@ -73,7 +72,7 @@ def test_seed_page_accessible_as_logged_in(client):
 # What it does: POST /seed with a non-UUID string shows exactly "seed not found".
 def test_bad_seed_string_shows_error(client):
     _set_guest(client)
-    resp = client.post("/seed", data={"seed": "not-a-uuid"}, follow_redirects=True)
+    resp = client.post("/seed", data={"seed": "not-a-seed"}, follow_redirects=True)
     assert resp.status_code == 200
     assert b"seed not found" in resp.data.lower()
 

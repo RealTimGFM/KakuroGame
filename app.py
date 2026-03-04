@@ -164,8 +164,7 @@ def create_app(db_path=None, testing=False):
             if not p.checkSeed(seed):
                 return render_template("seed_entry.html", error="seed not found")
 
-            import uuid as _uuid
-            seed_norm = str(_uuid.UUID(seed))
+            seed_norm = p.displayPuzzle()["seed"]
 
             if session.get("is_guest") is True:
                 return redirect(url_for("seed_confirm", seed=seed_norm))
