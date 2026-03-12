@@ -4,13 +4,12 @@ from registered_user import RegisteredUser
 from progression import Progression
 import os
 import json as _json
-from puzzle_importer import import_puzzles_from_file
 
 
 # Parse puzzle_data JSON string and build a 2D grid list for template rendering.
 # Each cell is a dict with: cell_type ("black"|"clue"|"play"),
 # Returns (grid_rows, w, h) or (None, 0, 0)
-def build_puzzle_grid(puzzle_data_str):
+def build_puzzle_grid(puzzle_data_str, board=None, invalid_positions=None, locked=False):
     try:
         pd = _json.loads(puzzle_data_str)
         w = pd["w"]
@@ -19,6 +18,9 @@ def build_puzzle_grid(puzzle_data_str):
         mask = pd["mask"]
     except Exception:
         return None, 0, 0
+
+    board = board or {}
+    invalid_positions = set(int(x) for x in (invalid_positions or []))
 
     grid = []
     for r in range(h):
@@ -48,6 +50,9 @@ def build_puzzle_grid(puzzle_data_str):
                     "row": r,
                     "col": c,
                     "flat_idx": i,
+                    "value": board.get(str(i), ""),
+                    "is_invalid": i in invalid_positions,
+                    "is_locked": locked,
                 })
             else:
                 row_cells.append({
@@ -72,9 +77,6 @@ def create_app(db_path=None, testing=False):
 
     db = Database(db_path=db_path)
     db.create_tables()
-    if not testing:
-        import_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "puzzles_import.json")
-        import_puzzles_from_file(db, import_path)
 
     app.config["DB_PATH"] = db.db_path
 
@@ -202,11 +204,82 @@ def create_app(db_path=None, testing=False):
         from puzzle import Puzzle
         p = Puzzle(db)
         if not p.checkSeed(seed):
-            return render_template("seed_play.html", error="seed not found", puzzle=None, grid=None, grid_w=0, grid_h=0)
+            return render_template(
+                "seed_play.html",
+                error="seed not found",
+                puzzle=None,
+                grid=None,
+                grid_w=0,
+                grid_h=0,
+                result_message=None,
+                result_type=None,
+                elapsed_time=None,
+                leaderboard_rows=[],
+                locked=False,
+            )
 
         puzzle = p.displayPuzzle()
-        grid, grid_w, grid_h = build_puzzle_grid(puzzle["puzzle_data"])
-        return render_template("seed_play.html", error=None, puzzle=puzzle, grid=grid, grid_w=grid_w, grid_h=grid_h)
+        p.ensurePlayState()
+        play_summary = p.getPlaySummary()
+        grid, grid_w, grid_h = build_puzzle_grid(
+            puzzle["puzzle_data"],
+            board=play_summary["board"],
+            invalid_positions=play_summary["invalid_positions"],
+            locked=play_summary["locked"],
+        )
+        leaderboard_rows = db.get_leaderboard_by_seed(seed)
+        return render_template(
+            "seed_play.html",
+            error=None,
+            puzzle=puzzle,
+            grid=grid,
+            grid_w=grid_w,
+            grid_h=grid_h,
+            result_message=play_summary["result"],
+            result_type=play_summary["result_type"],
+            elapsed_time=play_summary["elapsed_time"],
+            leaderboard_rows=leaderboard_rows,
+            locked=play_summary["locked"],
+        )
+
+    # Update one playable cell in the seeded puzzle.
+    @app.route("/seed/fill", methods=["POST"])
+    def seed_fill():
+        if not _is_authenticated():
+            return jsonify({"ok": False, "error": "auth required"}), 401
+
+        seed = session.get("seeded_puzzle_seed")
+        if not seed:
+            return jsonify({"ok": False, "error": "no seeded puzzle"}), 400
+
+        from puzzle import Puzzle
+        p = Puzzle(db)
+        if not p.checkSeed(seed):
+            return jsonify({"ok": False, "error": "seed not found"}), 404
+
+        payload = request.get_json(silent=True) or request.form
+        position = payload.get("position") if payload else None
+        value = payload.get("value") if payload else None
+
+        result = p.fillCells(position, value)
+        code = 200 if result.get("ok") else 400
+        return jsonify(result), code
+
+    # Check the seeded puzzle against the stored solution.
+    @app.route("/seed/check", methods=["POST"])
+    def seed_check():
+        if not _is_authenticated():
+            return redirect(url_for("login"))
+
+        seed = session.get("seeded_puzzle_seed")
+        if not seed:
+            return redirect(url_for("dashboard"))
+
+        from puzzle import Puzzle
+        p = Puzzle(db)
+        if p.checkSeed(seed):
+            p.checkPuzzle(progression_service)
+        return redirect(url_for("seed_play"))
 
     # Back to Campaign: exit seeded mode and return to the dashboard.
     @app.route("/seed/back", methods=["POST"])
@@ -225,6 +298,7 @@ def create_app(db_path=None, testing=False):
         return redirect(url_for("dashboard"))
 
     return app
+
 
 if __name__ == "__main__":
     app = create_app()
