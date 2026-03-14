@@ -2,6 +2,7 @@
 from flask import flash, session
 from typing import Optional, Dict, Any
 from puzzle import Puzzle
+from leaderboard import Leaderboard
 
 
 class Progression:
@@ -10,6 +11,10 @@ class Progression:
 
     def displayError(self, msg: str):
         flash(msg, "error")
+
+    def _clearSeededPlayState(self):
+        p = Puzzle(self.db)
+        p.resetPlayState()
 
     def setMode(self, mode: str):
         m = (mode or "").strip()
@@ -66,6 +71,7 @@ class Progression:
         session.pop("guest_games", None)
         session.pop("guest_mode", None)
         session.pop("guest_level", None)
+
     def enterPuzzleSeed(self, seed: str) -> Optional[Dict[str, Any]]:
         p = Puzzle(self.db)
         if not p.checkSeed(seed):
@@ -100,12 +106,14 @@ class Progression:
         payload = self.enterPuzzleSeed(seed)
         if payload is None:
             return None
+        self._clearSeededPlayState()
         session["seeded_puzzle_seed"] = payload["seed"]
         return payload
 
     # Exit seeded mode: clear the seeded seed from session and return to Campaign.
     def exitSeededMode(self):
         session.pop("seeded_puzzle_seed", None)
+        self._clearSeededPlayState()
         self.returnCampaign()
 
     # Called when a seeded puzzle is completed.
@@ -113,6 +121,7 @@ class Progression:
     # Guest: resets to Campaign mode at level 1.
     def completeSeededPuzzle(self):
         session.pop("seeded_puzzle_seed", None)
+        self._clearSeededPlayState()
         uid = session.get("user_id")
         if isinstance(uid, int):
             self.db.ensure_progression_row(uid)
@@ -120,3 +129,14 @@ class Progression:
         else:
             session["guest_mode"] = "Campaign"
             session["guest_level"] = 1
+
+    def updatePlayerTime(self, seed: str, elapsed_time: float, user_id: Optional[int] = None):
+        uid = user_id if isinstance(user_id, int) else session.get("user_id")
+        if not isinstance(uid, int):
+            return []
+
+        self.db.ensure_progression_row(uid)
+        self.db.update(uid, seed, elapsed_time)
+
+        lb = Leaderboard(self.db)
+        return lb.setPuzzleLeaderboard(uid, seed, elapsed_time)

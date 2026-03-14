@@ -1,7 +1,9 @@
-# What it does: Creates a fresh Flask app + fresh temp SQLite database for every test, and gives a test client.
+import json
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 import pytest
 from app import create_app
 from database import Database
@@ -26,11 +28,35 @@ def db(app):
 
 @pytest.fixture
 def seed_code():
-    # 6-char seed: lowercase letters + digits
     return "3fu9a4"
 
 
-def insert_puzzle(db: Database, seed: str, puzzle_data: str = "{}"):
+def make_puzzle_data():
+    return json.dumps({
+        "schema": 1,
+        "v": 1,
+        "w": 3,
+        "h": 3,
+        "stage": "Learner",
+        "level": 1,
+        "clues": [".", "11/0", "3/0", "0/3", ".", ".", "0/11", ".", "."],
+        "mask": "111100100"
+    }, separators=(",", ":"))
+
+
+def make_solution_data():
+    return json.dumps({
+        "schema": 1,
+        "v": 1,
+        "w": 3,
+        "h": 3,
+        "digits": "....21.92"
+    }, separators=(",", ":"))
+
+
+def insert_puzzle(db: Database, seed: str, puzzle_data: str = None):
+    if puzzle_data is None:
+        puzzle_data = make_puzzle_data()
     con = db.get_connection()
     cur = con.cursor()
     cur.execute(
@@ -40,7 +66,24 @@ def insert_puzzle(db: Database, seed: str, puzzle_data: str = "{}"):
     con.commit()
     con.close()
 
+
+def insert_puzzle_with_solution(db: Database, seed: str, puzzle_data: str = None, solution_data: str = None):
+    if puzzle_data is None:
+        puzzle_data = make_puzzle_data()
+    if solution_data is None:
+        solution_data = make_solution_data()
+
+    insert_puzzle(db, seed, puzzle_data)
+    con = db.get_connection()
+    cur = con.cursor()
+    cur.execute(
+        "INSERT INTO puzzle_solutions (seed, solution_data) VALUES (?, ?)",
+        (seed, solution_data)
+    )
+    con.commit()
+    con.close()
+
+
 @pytest.fixture
 def seed_uuid(seed_code):
-    # Alias for older test name; seed must be 6 chars [0-9a-z]
     return seed_code
