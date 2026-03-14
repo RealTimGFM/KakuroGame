@@ -1,4 +1,5 @@
 from typing import Optional, Dict, Any
+import json
 import re
 import time
 from flask import session
@@ -44,75 +45,137 @@ class Puzzle:
             "campaign_level": self._row["campaign_level"],
         }
 
-    def _get_seed_from_session(self) -> Optional[str]:
-        return session.get("seeded_puzzle_seed")
+    def _prefix_key(self, prefix: str, name: str) -> str:
+        return f"{prefix}_{name}"
 
-    def _board_key(self) -> str:
-        return "seeded_puzzle_board"
+    def _get_seed_from_session(self, prefix: str) -> Optional[str]:
+        return session.get(self._prefix_key(prefix, "seed"))
 
-    def _invalid_key(self) -> str:
-        return "seeded_puzzle_invalid_positions"
+    def _board_key(self, prefix: str) -> str:
+        return self._prefix_key(prefix, "board")
 
-    def _locked_key(self) -> str:
-        return "seeded_puzzle_locked"
+    def _invalid_key(self, prefix: str) -> str:
+        return self._prefix_key(prefix, "invalid_positions")
 
-    def _started_key(self) -> str:
-        return "seeded_puzzle_started_at"
+    def _locked_key(self, prefix: str) -> str:
+        return self._prefix_key(prefix, "locked")
 
-    def _stopped_key(self) -> str:
-        return "seeded_puzzle_stopped_at"
+    def _started_key(self, prefix: str) -> str:
+        return self._prefix_key(prefix, "started_at")
 
-    def _elapsed_key(self) -> str:
-        return "seeded_puzzle_elapsed_time"
+    def _stopped_key(self, prefix: str) -> str:
+        return self._prefix_key(prefix, "stopped_at")
 
-    def _result_key(self) -> str:
-        return "seeded_puzzle_result"
+    def _elapsed_key(self, prefix: str) -> str:
+        return self._prefix_key(prefix, "elapsed_time")
 
-    def _result_type_key(self) -> str:
-        return "seeded_puzzle_result_type"
+    def _result_key(self, prefix: str) -> str:
+        return self._prefix_key(prefix, "result")
 
-    def resetPlayState(self):
-        session.pop(self._board_key(), None)
-        session.pop(self._invalid_key(), None)
-        session.pop(self._locked_key(), None)
-        session.pop(self._started_key(), None)
-        session.pop(self._stopped_key(), None)
-        session.pop(self._elapsed_key(), None)
-        session.pop(self._result_key(), None)
-        session.pop(self._result_type_key(), None)
+    def _result_type_key(self, prefix: str) -> str:
+        return self._prefix_key(prefix, "result_type")
 
-    def ensurePlayState(self):
-        if session.get(self._board_key()) is None:
-            session[self._board_key()] = {}
-        if session.get(self._invalid_key()) is None:
-            session[self._invalid_key()] = []
-        if session.get(self._locked_key()) is None:
-            session[self._locked_key()] = False
-        if session.get(self._started_key()) is None:
-            session[self._started_key()] = time.time()
+    def resetState(self, prefix: str):
+        session.pop(self._board_key(prefix), None)
+        session.pop(self._invalid_key(prefix), None)
+        session.pop(self._locked_key(prefix), None)
+        session.pop(self._started_key(prefix), None)
+        session.pop(self._stopped_key(prefix), None)
+        session.pop(self._elapsed_key(prefix), None)
+        session.pop(self._result_key(prefix), None)
+        session.pop(self._result_type_key(prefix), None)
 
-    def getBoardState(self) -> dict:
-        self.ensurePlayState()
-        board = session.get(self._board_key(), {})
+    def ensureState(self, prefix: str):
+        if session.get(self._board_key(prefix)) is None:
+            session[self._board_key(prefix)] = {}
+        if session.get(self._invalid_key(prefix)) is None:
+            session[self._invalid_key(prefix)] = []
+        if session.get(self._locked_key(prefix)) is None:
+            session[self._locked_key(prefix)] = False
+        if session.get(self._started_key(prefix)) is None:
+            session[self._started_key(prefix)] = time.time()
+
+    def getBoardStateByPrefix(self, prefix: str) -> dict:
+        self.ensureState(prefix)
+        board = session.get(self._board_key(prefix), {})
         if not isinstance(board, dict):
             board = {}
-            session[self._board_key()] = board
+            session[self._board_key(prefix)] = board
         return board
 
+    def isLockedByPrefix(self, prefix: str) -> bool:
+        self.ensureState(prefix)
+        return session.get(self._locked_key(prefix), False) is True
+
+    def getPlaySummaryByPrefix(self, prefix: str) -> Dict[str, Any]:
+        self.ensureState(prefix)
+        return {
+            "board": dict(session.get(self._board_key(prefix), {})),
+            "invalid_positions": list(session.get(self._invalid_key(prefix), [])),
+            "locked": session.get(self._locked_key(prefix), False) is True,
+            "result": session.get(self._result_key(prefix)),
+            "result_type": session.get(self._result_type_key(prefix)),
+            "elapsed_time": session.get(self._elapsed_key(prefix)),
+        }
+
+    def _loadRowFromPrefix(self, prefix: str) -> bool:
+        if self._row:
+            return True
+        seed = self._get_seed_from_session(prefix)
+        if not seed:
+            return False
+        return self.checkSeed(seed)
+
+    def _isPlayablePosition(self, position: int) -> bool:
+        if not self._row:
+            return False
+        try:
+            pd = json.loads(self._row["puzzle_data"])
+        except Exception:
+            return False
+
+        mask = pd.get("mask", "")
+        if position < 0 or position >= len(mask):
+            return False
+        return mask[position] == "0"
+
+    def _lockByPrefix(self, prefix: str):
+        self.ensureState(prefix)
+        session[self._locked_key(prefix)] = True
+
+    def _stopTimerByPrefix(self, prefix: str):
+        self.ensureState(prefix)
+        if session.get(self._stopped_key(prefix)) is None:
+            session[self._stopped_key(prefix)] = time.time()
+
+    def _calculateTimeByPrefix(self, prefix: str):
+        self.ensureState(prefix)
+        start = session.get(self._started_key(prefix))
+        stop = session.get(self._stopped_key(prefix))
+        if start is None:
+            start = time.time()
+            session[self._started_key(prefix)] = start
+        if stop is None:
+            stop = time.time()
+            session[self._stopped_key(prefix)] = stop
+        elapsed = round(max(0.0, float(stop) - float(start)), 2)
+        session[self._elapsed_key(prefix)] = elapsed
+        return elapsed
+
+    def resetPlayState(self):
+        self.resetState("seeded_puzzle")
+
+    def ensurePlayState(self):
+        self.ensureState("seeded_puzzle")
+
+    def getBoardState(self) -> dict:
+        return self.getBoardStateByPrefix("seeded_puzzle")
+
     def isLocked(self) -> bool:
-        self.ensurePlayState()
-        return session.get(self._locked_key(), False) is True
+        return self.isLockedByPrefix("seeded_puzzle")
 
     def getPlaySummary(self) -> Dict[str, Any]:
-        self.ensurePlayState()
-        return {
-            "board": dict(session.get(self._board_key(), {})),
-            "invalid_positions": list(session.get(self._invalid_key(), [])),
-            "locked": session.get(self._locked_key(), False) is True,
-            "result": session.get(self._result_key()),
-            "result_type": session.get(self._result_type_key()),
-            "elapsed_time": session.get(self._elapsed_key()),
-        }
+        return self.getPlaySummaryByPrefix("seeded_puzzle")
 
     def fillCells(self, position, value):
         self.ensurePlayState()
@@ -125,98 +188,94 @@ class Puzzle:
                 "locked": True,
             }
 
-        if not self._row:
-            seed = self._get_seed_from_session()
-            if not seed or not self.checkSeed(seed):
-                return {
-                    "ok": False,
-                    "error": "seed not found",
-                    "invalid_positions": [],
-                    "locked": False,
-                }
-
-        board = self.getBoardState()
-        cell = Cell(position, board)
-        validator = Validator.create(self._row["puzzle_data"], cell.position, value, board)
-        valid = validator.checkInput()
-
-        if valid:
-            cell.setValue(value)
-            session[self._board_key()] = board
-            session[self._invalid_key()] = []
-            if session.get(self._result_type_key()) != "success":
-                session.pop(self._result_key(), None)
-                session.pop(self._result_type_key(), None)
+        if not self._loadRowFromPrefix("seeded_puzzle"):
             return {
-                "ok": True,
-                "position": cell.position,
-                "value": "" if value is None else str(value).strip(),
+                "ok": False,
+                "error": "seed not found",
                 "invalid_positions": [],
                 "locked": False,
             }
 
-        invalid_positions = cell.highlightCell()
-        session[self._invalid_key()] = invalid_positions
+        board = self.getBoardState()
+        cell = Cell(position, board)
+
+        if not self._isPlayablePosition(cell.position):
+            invalid_positions = cell.highlightCell()
+            session[self._invalid_key("seeded_puzzle")] = invalid_positions
+            return {
+                "ok": False,
+                "position": cell.position,
+                "value": board.get(str(cell.position), ""),
+                "error": "Invalid input.",
+                "invalid_positions": invalid_positions,
+                "locked": False,
+            }
+
+        value_str = "" if value is None else str(value).strip()
+
+        # Live validation only checks: empty OR one digit 1-9
+        if value_str != "" and value_str not in {"1", "2", "3", "4", "5", "6", "7", "8", "9"}:
+            invalid_positions = cell.highlightCell()
+            session[self._invalid_key("seeded_puzzle")] = invalid_positions
+            return {
+                "ok": False,
+                "position": cell.position,
+                "value": value_str,
+                "error": "Invalid input.",
+                "invalid_positions": invalid_positions,
+                "locked": False,
+            }
+
+        cell.setValue(value_str)
+        session[self._board_key("seeded_puzzle")] = board
+        session[self._invalid_key("seeded_puzzle")] = []
+
+        if session.get(self._result_type_key("seeded_puzzle")) != "success":
+            session.pop(self._result_key("seeded_puzzle"), None)
+            session.pop(self._result_type_key("seeded_puzzle"), None)
+
         return {
-            "ok": False,
+            "ok": True,
             "position": cell.position,
-            "value": board.get(str(cell.position), ""),
-            "error": "Invalid input.",
-            "invalid_positions": invalid_positions,
+            "value": value_str,
+            "invalid_positions": [],
             "locked": False,
         }
-
     def lockPuzzle(self):
-        self.ensurePlayState()
-        session[self._locked_key()] = True
+        self._lockByPrefix("seeded_puzzle")
 
     def stopTimer(self):
-        self.ensurePlayState()
-        if session.get(self._stopped_key()) is None:
-            session[self._stopped_key()] = time.time()
+        self._stopTimerByPrefix("seeded_puzzle")
 
     def calculateTime(self):
-        self.ensurePlayState()
-        start = session.get(self._started_key())
-        stop = session.get(self._stopped_key())
-        if start is None:
-            start = time.time()
-            session[self._started_key()] = start
-        if stop is None:
-            stop = time.time()
-            session[self._stopped_key()] = stop
-        elapsed = round(max(0.0, float(stop) - float(start)), 2)
-        session[self._elapsed_key()] = elapsed
-        return elapsed
+        return self._calculateTimeByPrefix("seeded_puzzle")
 
     def displayResult(self, done: bool, elapsed_time: Optional[float] = None):
         if done:
             msg = "Puzzle completed!"
             if elapsed_time is not None:
                 msg = f"Puzzle completed in {elapsed_time:.2f}s!"
-            session[self._result_key()] = msg
-            session[self._result_type_key()] = "success"
+            session[self._result_key("seeded_puzzle")] = msg
+            session[self._result_type_key("seeded_puzzle")] = "success"
             return msg
 
         msg = "Puzzle is not complete yet."
-        session[self._result_key()] = msg
-        session[self._result_type_key()] = "error"
+        session[self._result_key("seeded_puzzle")] = msg
+        session[self._result_type_key("seeded_puzzle")] = "error"
         return msg
 
     def checkPuzzle(self, progression=None):
         self.ensurePlayState()
 
-        if not self._row:
-            seed = self._get_seed_from_session()
-            if not seed or not self.checkSeed(seed):
-                return {"done": False, "error": "seed not found", "leaderboard": []}
+        if not self._loadRowFromPrefix("seeded_puzzle"):
+            return {"done": False, "error": "seed not found", "leaderboard": []}
 
         seed = self._row["seed"]
         board = self.getBoardState()
         done = self.db.isCompleted(seed, board)
 
         if done:
-            session[self._invalid_key()] = []
+            session[self._invalid_key("seeded_puzzle")] = []
             self.lockPuzzle()
             self.stopTimer()
             elapsed_time = self.calculateTime()
@@ -230,7 +289,7 @@ class Puzzle:
                 "done": True,
                 "locked": True,
                 "elapsed_time": elapsed_time,
-                "result": session.get(self._result_key()),
+                "result": session.get(self._result_key("seeded_puzzle")),
                 "leaderboard": leaderboard_rows,
             }
 
@@ -238,7 +297,132 @@ class Puzzle:
         return {
             "done": False,
             "locked": False,
-            "elapsed_time": session.get(self._elapsed_key()),
-            "result": session.get(self._result_key()),
+            "elapsed_time": session.get(self._elapsed_key("seeded_puzzle")),
+            "result": session.get(self._result_key("seeded_puzzle")),
+            "leaderboard": [],
+        }
+
+    def resetCampaignPlayState(self):
+        self.resetState("campaign_puzzle")
+
+    def ensureCampaignPlayState(self):
+        self.ensureState("campaign_puzzle")
+
+    def getCampaignBoardState(self) -> dict:
+        return self.getBoardStateByPrefix("campaign_puzzle")
+
+    def isCampaignLocked(self) -> bool:
+        return self.isLockedByPrefix("campaign_puzzle")
+
+    def getCampaignPlaySummary(self) -> Dict[str, Any]:
+        return self.getPlaySummaryByPrefix("campaign_puzzle")
+
+    def fillCampaignCells(self, position, value):
+        self.ensureCampaignPlayState()
+
+        if self.isCampaignLocked():
+            return {
+                "ok": False,
+                "error": "Puzzle is locked.",
+                "invalid_positions": [],
+                "locked": True,
+            }
+
+        if not self._loadRowFromPrefix("campaign_puzzle"):
+            return {
+                "ok": False,
+                "error": "level is not ready",
+                "invalid_positions": [],
+                "locked": False,
+            }
+
+        board = self.getCampaignBoardState()
+        cell = Cell(position, board)
+
+        if not self._isPlayablePosition(cell.position):
+            invalid_positions = cell.highlightCell()
+            session[self._invalid_key("campaign_puzzle")] = invalid_positions
+            return {
+                "ok": False,
+                "position": cell.position,
+                "value": board.get(str(cell.position), ""),
+                "error": "Invalid input.",
+                "invalid_positions": invalid_positions,
+                "locked": False,
+            }
+
+        value_str = "" if value is None else str(value).strip()
+        if value_str != "" and value_str not in {"1", "2", "3", "4", "5", "6", "7", "8", "9"}:
+            invalid_positions = cell.highlightCell()
+            session[self._invalid_key("campaign_puzzle")] = invalid_positions
+            return {
+                "ok": False,
+                "position": cell.position,
+                "value": value_str,
+                "error": "Invalid input.",
+                "invalid_positions": invalid_positions,
+                "locked": False,
+            }
+
+        cell.setValue(value_str)
+        session[self._board_key("campaign_puzzle")] = board
+        session[self._invalid_key("campaign_puzzle")] = []
+        if session.get(self._result_type_key("campaign_puzzle")) != "success":
+            session.pop(self._result_key("campaign_puzzle"), None)
+            session.pop(self._result_type_key("campaign_puzzle"), None)
+
+        return {
+            "ok": True,
+            "position": cell.position,
+            "value": value_str,
+            "invalid_positions": [],
+            "locked": False,
+        }
+
+    def displayCampaignResult(self, done: bool):
+        if done:
+            session[self._result_key("campaign_puzzle")] = "Solved"
+            session[self._result_type_key("campaign_puzzle")] = "success"
+            return "Solved"
+
+        session[self._result_key("campaign_puzzle")] = "Not solved"
+        session[self._result_type_key("campaign_puzzle")] = "error"
+        return "Not solved"
+
+    def checkCampaignPuzzle(self, campaign=None):
+        self.ensureCampaignPlayState()
+
+        if not self._loadRowFromPrefix("campaign_puzzle"):
+            return {"done": False, "error": "level is not ready", "leaderboard": []}
+
+        seed = self._row["seed"]
+        board = self.getCampaignBoardState()
+        done = self.db.isCompleted(seed, board)
+
+        if done:
+            session[self._invalid_key("campaign_puzzle")] = []
+            self._lockByPrefix("campaign_puzzle")
+            self._stopTimerByPrefix("campaign_puzzle")
+            elapsed_time = self._calculateTimeByPrefix("campaign_puzzle")
+            self.displayCampaignResult(True)
+
+            campaign_info = {}
+            if campaign is not None:
+                campaign_info = campaign.completeCampaignPuzzle(seed, elapsed_time) or {}
+
+            return {
+                "done": True,
+                "locked": True,
+                "elapsed_time": elapsed_time,
+                "result": session.get(self._result_key("campaign_puzzle")),
+                "leaderboard": campaign_info.get("leaderboard_rows", []),
+            }
+
+        self.displayCampaignResult(False)
+        return {
+            "done": False,
+            "locked": False,
+            "elapsed_time": session.get(self._elapsed_key("campaign_puzzle")),
+            "result": session.get(self._result_key("campaign_puzzle")),
             "leaderboard": [],
         }

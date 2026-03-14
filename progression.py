@@ -1,4 +1,3 @@
-# progression.py
 from flask import flash, session
 from typing import Optional, Dict, Any
 from puzzle import Puzzle
@@ -11,6 +10,9 @@ class Progression:
 
     def displayError(self, msg: str):
         flash(msg, "error")
+
+    def showOkMsg(self, msg: str):
+        flash(msg, "success")
 
     def _clearSeededPlayState(self):
         p = Puzzle(self.db)
@@ -39,6 +41,7 @@ class Progression:
         except Exception:
             self.displayError("Invalid level.")
             return
+
         if lvl < 1:
             self.displayError("Invalid level.")
             return
@@ -49,6 +52,26 @@ class Progression:
             self.db.set_campaign_level(uid, lvl)
         else:
             session["guest_level"] = lvl
+
+    def getOfficialCampaignLevel(self) -> int:
+        uid = session.get("user_id")
+        if isinstance(uid, int):
+            ok = self.db.ensure_progression_row(uid)
+            if not ok:
+                session.pop("user_id", None)
+                session.pop("username", None)
+                return 1
+
+            row = self.db.get_progression(uid)
+            if row and row["campaign_level"]:
+                return int(row["campaign_level"])
+            return 1
+
+        guest_level = session.get("guest_level", 1)
+        try:
+            return max(1, int(guest_level))
+        except Exception:
+            return 1
 
     def loadProgression(self, user_id: int):
         self.db.ensure_progression_row(user_id)
@@ -100,28 +123,24 @@ class Progression:
 
         return payload
 
-    # Enter seeded mode: load the puzzle and store the seed in the session.
-    # Returns the puzzle payload dict, or None if the seed is invalid.
     def enterSeededMode(self, seed: str) -> Optional[Dict[str, Any]]:
         payload = self.enterPuzzleSeed(seed)
         if payload is None:
             return None
+
         self._clearSeededPlayState()
         session["seeded_puzzle_seed"] = payload["seed"]
         return payload
 
-    # Exit seeded mode: clear the seeded seed from session and return to Campaign.
     def exitSeededMode(self):
         session.pop("seeded_puzzle_seed", None)
         self._clearSeededPlayState()
         self.returnCampaign()
 
-    # Called when a seeded puzzle is completed.
-    # Logged-in: restores Campaign mode (keeps their DB campaign level).
-    # Guest: resets to Campaign mode at level 1.
     def completeSeededPuzzle(self):
         session.pop("seeded_puzzle_seed", None)
         self._clearSeededPlayState()
+
         uid = session.get("user_id")
         if isinstance(uid, int):
             self.db.ensure_progression_row(uid)

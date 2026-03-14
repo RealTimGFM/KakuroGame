@@ -88,23 +88,28 @@ def test_seed_not_in_db_shows_error(client, seed_uuid):
 # ---------- guest confirm flow ----------
 
 # What it does: valid seed as guest redirects to /seed/confirm (not directly loading).
-def test_valid_seed_guest_redirects_to_confirm(client, db, seed_uuid):
+def test_valid_seed_guest_shows_popup_inside_seed_page(client, db, seed_uuid):
     insert_puzzle(db, seed_uuid, "{}")
     _set_guest(client)
     resp = client.post("/seed", data={"seed": seed_uuid}, follow_redirects=False)
-    assert resp.status_code in (302, 303)
-    assert "/seed/confirm" in resp.headers["Location"]
+
+    assert resp.status_code == 200
+    assert b"save your progress" in resp.data.lower()
+    assert b"session-only" in resp.data.lower()
+    assert b"sign up" in resp.data.lower()
+    assert b"/seed/confirm" in resp.data
 
 
 # What it does: GET /seed/confirm shows guest warning text and a Sign Up link.
-def test_seed_confirm_page_shows_warning_and_signup(client, db, seed_uuid):
+def test_seed_guest_popup_contains_confirm_form(client, db, seed_uuid):
     insert_puzzle(db, seed_uuid, "{}")
     _set_guest(client)
-    client.post("/seed", data={"seed": seed_uuid}, follow_redirects=False)
-    resp = client.get(f"/seed/confirm?seed={seed_uuid}")
+    resp = client.post("/seed", data={"seed": seed_uuid}, follow_redirects=False)
+
     assert resp.status_code == 200
-    assert b"session" in resp.data.lower()
-    assert b"sign up" in resp.data.lower()
+    assert b"continue as guest" in resp.data.lower()
+    assert b"name=\"seed\"" in resp.data
+    assert b"/seed/confirm" in resp.data
 
 
 # What it does: POST /seed/confirm as guest sets seeded_puzzle_seed in session and

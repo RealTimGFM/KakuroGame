@@ -54,26 +54,33 @@ def make_solution_data():
     }, separators=(",", ":"))
 
 
-def insert_puzzle(db: Database, seed: str, puzzle_data: str = None):
+def insert_puzzle(db: Database, seed: str, puzzle_data: str = None, difficulty: str = "easy", campaign_level: int = 1):
     if puzzle_data is None:
         puzzle_data = make_puzzle_data()
     con = db.get_connection()
     cur = con.cursor()
     cur.execute(
         "INSERT INTO puzzles (seed, puzzle_data, difficulty, campaign_level) VALUES (?, ?, ?, ?)",
-        (seed, puzzle_data, "easy", 1)
+        (seed, puzzle_data, difficulty, campaign_level)
     )
     con.commit()
     con.close()
 
 
-def insert_puzzle_with_solution(db: Database, seed: str, puzzle_data: str = None, solution_data: str = None):
+def insert_puzzle_with_solution(
+    db: Database,
+    seed: str,
+    puzzle_data: str = None,
+    solution_data: str = None,
+    difficulty: str = "easy",
+    campaign_level: int = 1,
+):
     if puzzle_data is None:
         puzzle_data = make_puzzle_data()
     if solution_data is None:
         solution_data = make_solution_data()
 
-    insert_puzzle(db, seed, puzzle_data)
+    insert_puzzle(db, seed, puzzle_data, difficulty=difficulty, campaign_level=campaign_level)
     con = db.get_connection()
     cur = con.cursor()
     cur.execute(

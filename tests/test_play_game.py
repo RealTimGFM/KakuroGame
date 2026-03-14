@@ -31,8 +31,7 @@ def test_fill_cells_invalid_flow_highlights_cell(client, db, seed_code):
     insert_puzzle_with_solution(db, seed_code)
     _login_and_seed(client, seed_code)
 
-    client.post("/seed/fill", json={"position": 4, "value": "2"})
-    r = client.post("/seed/fill", json={"position": 5, "value": "2"})
+    r = client.post("/seed/fill", json={"position": 5, "value": "0"})
     assert r.status_code == 400
     j = r.get_json()
     assert j["ok"] is False

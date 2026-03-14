@@ -10,6 +10,7 @@
 
 <body>
     <div class="grid-bg"></div>
+
     <div class="container">
         <div class="form-card">
             <h1 class="logo">KakuroGame</h1>
@@ -22,7 +23,14 @@
             <form method="POST" action="{{ url_for('seed_entry') }}">
                 <div class="input-group">
                     <label for="seed">Puzzle Seed (6 chars)</label>
-                    <input type="text" id="seed" name="seed" placeholder="3fu9a4" required>
+                    <input
+                        type="text"
+                        id="seed"
+                        name="seed"
+                        placeholder="3fu9a4"
+                        value="{{ seed_value or '' }}"
+                        required
+                    >
                 </div>
                 <button type="submit" class="btn">Load Puzzle</button>
             </form>
@@ -32,6 +40,66 @@
             </div>
         </div>
     </div>
+
+    {% if show_guest_popup %}
+    <div class="modal-overlay" id="seed-guest-modal">
+        <div class="modal-card">
+            <button type="button" class="modal-close" id="seed-guest-close">&times;</button>
+
+            <h3>Save your progress</h3>
+            <p>
+                You are playing as a guest. Progress is session-only and will not be saved beyond this session.
+            </p>
+            <p>
+                Want to keep your progress? Sign Up for a free account.
+            </p>
+
+            <div class="modal-actions">
+                <a href="{{ url_for('signup') }}" class="btn">Sign Up</a>
+                <a href="{{ url_for('login') }}" class="btn secondary">Login</a>
+            </div>
+
+            <form method="POST" action="{{ url_for('seed_confirm') }}" style="margin-bottom: 10px;">
+                <input type="hidden" name="seed" value="{{ pending_seed }}">
+                <button type="submit" class="btn secondary modal-later-btn">
+                    Continue as Guest
+                </button>
+            </form>
+
+            <button type="button" class="btn secondary modal-later-btn" id="seed-guest-later">
+                Maybe Later
+            </button>
+        </div>
+    </div>
+    {% endif %}
+
+    <script>
+        const seedGuestModal = document.getElementById('seed-guest-modal');
+        const seedGuestClose = document.getElementById('seed-guest-close');
+        const seedGuestLater = document.getElementById('seed-guest-later');
+
+        function closeSeedGuestModal() {
+            if (seedGuestModal) {
+                seedGuestModal.style.display = 'none';
+            }
+        }
+
+        if (seedGuestClose) {
+            seedGuestClose.addEventListener('click', closeSeedGuestModal);
+        }
+
+        if (seedGuestLater) {
+            seedGuestLater.addEventListener('click', closeSeedGuestModal);
+        }
+
+        if (seedGuestModal) {
+            seedGuestModal.addEventListener('click', (e) => {
+                if (e.target === seedGuestModal) {
+                    closeSeedGuestModal();
+                }
+            });
+        }
+    </script>
 </body>
 
 </html>

@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KakuroGame - Campaign Puzzle</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+    <div class="grid-bg"></div>
+    <div class="container" style="max-width:760px;">
+        <div class="form-card">
+            <h1 class="logo">KakuroGame</h1>
+            <p class="subtitle">Campaign Mode</p>
+
+            {% if error %}
+            <div class="alert alert-error">{{ error }}</div>
+            <div class="switch-link">
+                <p><a href="{{ url_for('dashboard') }}">Back to Menu</a></p>
+            </div>
+            {% else %}
+            <div class="campaign-meta">
+                <p class="info-text">Campaign Level {{ official_level }} &nbsp;|&nbsp; {{ level_info.label }}</p>
+                <p class="info-text">
+                    Seed: <strong style="color:#e2b714;font-size:0.75rem;word-break:break-all;">{{ puzzle.seed
+                        }}</strong>
+                </p>
+            </div>
+
+            {% if elapsed_time is not none %}
+            <p class="info-text timer-text">Elapsed Time: {{ '%.2f'|format(elapsed_time) }}s</p>
+            {% endif %}
+
+            {% if result_message %}
+            <div class="alert {% if result_type == 'success' %}alert-success{% else %}alert-error{% endif %}">{{
+                result_message }}</div>
+            {% endif %}
+
+            {% if grid %}
+            <div class="kakuro-board-wrap">
+                <table class="kakuro-board" id="campaign-grid">
+                    {% for row in grid %}
+                    <tr>
+                        {% for cell in row %}
+                        {% if cell.cell_type == "black" %}
+                        <td class="kc-black"></td>
+                        {% elif cell.cell_type == "clue" %}
+                        <td class="kc-clue">
+                            <div class="kc-clue-inner">
+                                <span class="kc-down">{% if cell.clue_down %}{{ cell.clue_down }}{% endif %}</span>
+                                <span class="kc-right">{% if cell.clue_right %}{{ cell.clue_right }}{% endif %}</span>
+                            </div>
+                        </td>
+                        {% else %}
+                        <td class="kc-play">
+                            <input type="text" inputmode="numeric" maxlength="1"
+                                class="kc-input{% if cell.is_invalid %} kc-input-invalid{% endif %}"
+                                data-flat-idx="{{ cell.flat_idx }}" value="{{ cell.value }}" {% if cell.is_locked
+                                %}disabled{% endif %}>
+                        </td>
+                        {% endif %}
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </table>
+            </div>
+            {% endif %}
+
+            <div class="campaign-action-bar">
+                <form method="POST" action="{{ url_for('campaign_check') }}" class="campaign-action-form">
+                    <button type="submit" class="campaign-action-btn" {% if locked %}disabled{% endif %}>
+                        <span class="campaign-action-icon">✔</span>
+                        <span>Check Puzzle</span>
+                    </button>
+                </form>
+
+                <form method="POST" action="{{ url_for('campaign_restart') }}" class="campaign-action-form">
+                    <button type="submit" class="campaign-action-btn campaign-action-btn-secondary">
+                        <span class="campaign-action-icon">↺</span>
+                        <span>Restart Level</span>
+                    </button>
+                </form>
+
+                <button type="button" class="campaign-action-btn campaign-action-btn-empty" disabled>
+                    <span class="campaign-action-icon">💡</span>
+                    <span>Show Solution</span>
+                </button>
+
+                {% if next_level %}
+                <form method="POST" action="{{ url_for('campaign_next') }}" class="campaign-action-form">
+                    <button type="submit" class="campaign-action-btn">
+                        <span class="campaign-action-icon">➜</span>
+                        <span>Next Level</span>
+                    </button>
+                </form>
+                {% else %}
+                <button type="button" class="campaign-action-btn campaign-action-btn-empty" disabled>
+                    <span class="campaign-action-icon">➜</span>
+                    <span>Next Level</span>
+                </button>
+                {% endif %}
+            </div>
+
+            <div class="campaign-leave-row">
+                <form method="POST" action="{{ url_for('campaign_leave') }}">
+                    <button type="submit" class="btn secondary">Leave Campaign</button>
+                </form>
+            </div>
+            {% if leaderboard_rows %}
+            <div class="leaderboard-wrap">
+                <h3>Puzzle Leaderboard</h3>
+                <table class="leaderboard-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Player</th>
+                            <th>Best Time</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in leaderboard_rows %}
+                        <tr>
+                            <td>{{ loop.index }}</td>
+                            <td>{{ row.username }}</td>
+                            <td>{{ '%.2f'|format(row.elapsed_time) }}s</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+
+            {% if guest_prompt and is_guest %}
+            <div class="modal-overlay" id="guest-progress-modal">
+                <div class="modal-card">
+                    <button type="button" class="modal-close" id="guest-progress-close">&times;</button>
+
+                    <h3>Save your progress</h3>
+                    <p>
+                        You are playing as a guest. Sign up or log in to save your unlocked campaign level.
+                    </p>
+
+                    <div class="modal-actions">
+                        <a href="{{ url_for('signup') }}" class="btn">Sign Up</a>
+                        <a href="{{ url_for('login') }}" class="btn secondary">Login</a>
+                    </div>
+
+                    <button type="button" class="btn secondary modal-later-btn" id="guest-progress-later">
+                        Maybe Later
+                    </button>
+                </div>
+            </div>
+            {% endif %}
+
+            {% if campaign_completed %}
+            <div class="campaign-complete-box">
+                <h3>Campaign Complete</h3>
+                {% if campaign_total_elapsed_time is not none %}
+                <p>Total campaign time: {{ '%.2f'|format(campaign_total_elapsed_time) }}s</p>
+                {% endif %}
+
+                {% if campaign_leaderboard_rows %}
+                <table class="leaderboard-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Player</th>
+                            <th>Total Time</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in campaign_leaderboard_rows %}
+                        <tr>
+                            <td>{{ loop.index }}</td>
+                            <td>{{ row.username }}</td>
+                            <td>{{ '%.2f'|format(row.elapsed_time) }}s</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% endif %}
+            </div>
+            {% endif %}
+            {% endif %}
+        </div>
+    </div>
+    <script>
+        const campaignInputs = document.querySelectorAll('.kc-input');
+
+        campaignInputs.forEach((input) => {
+            input.addEventListener('change', async () => {
+                const value = input.value;
+                const position = input.dataset.flatIdx;
+
+                const resp = await fetch('{{ url_for("campaign_fill") }}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ position, value })
+                });
+
+                const data = await resp.json();
+
+                document.querySelectorAll('.kc-input').forEach((el) => {
+                    el.classList.remove('kc-input-invalid');
+                });
+
+                if (!data.ok) {
+                    input.classList.add('kc-input-invalid');
+                }
+
+                input.value = data.value ?? '';
+            });
+        });
+    </script>
+    <script>
+        const guestModal = document.getElementById('guest-progress-modal');
+        const guestModalClose = document.getElementById('guest-progress-close');
+        const guestModalLater = document.getElementById('guest-progress-later');
+
+        function closeGuestModal() {
+            if (guestModal) {
+                guestModal.style.display = 'none';
+            }
+        }
+
+        if (guestModalClose) {
+            guestModalClose.addEventListener('click', closeGuestModal);
+        }
+
+        if (guestModalLater) {
+            guestModalLater.addEventListener('click', closeGuestModal);
+        }
+
+        if (guestModal) {
+            guestModal.addEventListener('click', (e) => {
+                if (e.target === guestModal) {
+                    closeGuestModal();
+                }
+            });
+        }
+    </script>
+</body>
+
+</html>

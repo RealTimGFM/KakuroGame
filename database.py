@@ -1,5 +1,6 @@
 import json
 import os
+import random
 import sqlite3
 import sys
 
@@ -95,10 +96,51 @@ class Database:
             )
         """)
 
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS campaign_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                is_guest INTEGER NOT NULL DEFAULT 0,
+                started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                completed_at TIMESTAMP,
+                current_level INTEGER NOT NULL DEFAULT 1,
+                is_eligible INTEGER NOT NULL DEFAULT 1,
+                total_elapsed_time REAL,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        """)
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS campaign_level_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                campaign_run_id INTEGER NOT NULL,
+                campaign_level INTEGER NOT NULL,
+                seed TEXT NOT NULL,
+                started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                completed_at TIMESTAMP,
+                elapsed_time REAL,
+                result_text TEXT,
+                is_solved INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY(campaign_run_id) REFERENCES campaign_runs(id) ON DELETE CASCADE,
+                FOREIGN KEY(seed) REFERENCES puzzles(seed) ON DELETE CASCADE
+            )
+        """)
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS campaign_leaderboard (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL UNIQUE,
+                username TEXT NOT NULL,
+                elapsed_time REAL NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        """)
+
         con.commit()
         con.close()
 
-        # Safe small migrations for older DB files
         self._ensure_column("user_puzzles", "completed_at", "completed_at TIMESTAMP")
         self._ensure_column("user_puzzles", "last_elapsed_time", "last_elapsed_time REAL")
         self._ensure_column("user_puzzles", "best_elapsed_time", "best_elapsed_time REAL")
@@ -140,10 +182,17 @@ class Database:
         con.close()
         return row
 
-    # Progression
     def ensure_progression_row(self, user_id: int):
         con = self.get_connection()
         cur = con.cursor()
+
+        # user must exist first or FK will fail
+        cur.execute("SELECT id FROM users WHERE id = ?", (user_id,))
+        user_exists = cur.fetchone()
+        if not user_exists:
+            con.close()
+            return False
+
         cur.execute("SELECT user_id FROM progression WHERE user_id = ?", (user_id,))
         exists = cur.fetchone()
         if not exists:
@@ -152,7 +201,9 @@ class Database:
                 (user_id,)
             )
             con.commit()
+
         con.close()
+        return True
 
     def set_mode(self, user_id: int, mode: str):
         con = self.get_connection()
@@ -323,8 +374,274 @@ class Database:
             SELECT seed, user_id, username, elapsed_time
             FROM leaderboard
             WHERE seed = ?
-            ORDER BY elapsed_time ASC, username ASC
+            ORDER BY elapsed_time ASC, username ASC, id ASC
+            LIMIT 5
         """, (seed,))
+        rows = cur.fetchall()
+        con.close()
+        return rows
+
+    # Campaign helpers
+    def get_campaign_level_info(self, campaign_level: int):
+        try:
+            level = int(campaign_level)
+        except Exception:
+            return None
+
+        if level < 1 or level > 15:
+            return None
+
+        stages = ["Learner", "Intermediate", "Master"]
+        stage_index = (level - 1) // 5
+        stage_level = ((level - 1) % 5) + 1
+        stage_name = stages[stage_index]
+
+        return {
+            "official_level": level,
+            "stage_name": stage_name,
+            "stage_level": stage_level,
+            "label": f"{stage_name} {stage_level}",
+        }
+
+    def count_puzzles_for_campaign_level(self, campaign_level: int) -> int:
+        info = self.get_campaign_level_info(campaign_level)
+        if info is None:
+            return 0
+
+        con = self.get_connection()
+        cur = con.cursor()
+        cur.execute("""
+            SELECT COUNT(*)
+            FROM puzzles
+            WHERE difficulty = ? AND campaign_level = ?
+        """, (info["stage_name"], info["stage_level"]))
+        count = cur.fetchone()[0]
+        con.close()
+        return int(count)
+
+    def get_random_puzzle_for_campaign_level(self, campaign_level: int, exclude_seed=None):
+        info = self.get_campaign_level_info(campaign_level)
+        if info is None:
+            return None
+
+        con = self.get_connection()
+        cur = con.cursor()
+        cur.execute("""
+            SELECT *
+            FROM puzzles
+            WHERE difficulty = ? AND campaign_level = ?
+            ORDER BY seed ASC
+        """, (info["stage_name"], info["stage_level"]))
+        rows = cur.fetchall()
+        con.close()
+
+        if not rows:
+            return None
+
+        if exclude_seed:
+            filtered = [row for row in rows if row["seed"] != exclude_seed]
+            if filtered:
+                return random.choice(filtered)
+
+        return random.choice(rows)
+
+    def create_campaign_run(self, user_id=None, is_guest=False, current_level=1):
+        con = self.get_connection()
+        cur = con.cursor()
+        cur.execute("""
+            INSERT INTO campaign_runs (user_id, is_guest, current_level)
+            VALUES (?, ?, ?)
+        """, (user_id, 1 if is_guest else 0, int(current_level)))
+        con.commit()
+        run_id = cur.lastrowid
+        con.close()
+        return run_id
+
+    def get_campaign_run(self, run_id: int):
+        con = self.get_connection()
+        cur = con.cursor()
+        cur.execute("SELECT * FROM campaign_runs WHERE id = ?", (run_id,))
+        row = cur.fetchone()
+        con.close()
+        return row
+
+    def get_latest_open_campaign_run(self, user_id: int):
+        con = self.get_connection()
+        cur = con.cursor()
+        cur.execute("""
+            SELECT *
+            FROM campaign_runs
+            WHERE user_id = ? AND completed_at IS NULL
+            ORDER BY id DESC
+            LIMIT 1
+        """, (user_id,))
+        row = cur.fetchone()
+        con.close()
+        return row
+
+    def set_campaign_run_level(self, run_id: int, current_level: int):
+        con = self.get_connection()
+        cur = con.cursor()
+        cur.execute("""
+            UPDATE campaign_runs
+            SET current_level = ?
+            WHERE id = ?
+        """, (int(current_level), run_id))
+        con.commit()
+        con.close()
+
+    def create_campaign_level_run(self, campaign_run_id: int, campaign_level: int, seed: str):
+        con = self.get_connection()
+        cur = con.cursor()
+        cur.execute("""
+            INSERT INTO campaign_level_runs (campaign_run_id, campaign_level, seed)
+            VALUES (?, ?, ?)
+        """, (campaign_run_id, int(campaign_level), seed))
+        con.commit()
+        row_id = cur.lastrowid
+        con.close()
+        return row_id
+
+    def get_last_played_seed_for_run_level(self, campaign_run_id: int, campaign_level: int):
+        con = self.get_connection()
+        cur = con.cursor()
+        cur.execute("""
+            SELECT seed
+            FROM campaign_level_runs
+            WHERE campaign_run_id = ? AND campaign_level = ?
+            ORDER BY id DESC
+            LIMIT 1
+        """, (campaign_run_id, int(campaign_level)))
+        row = cur.fetchone()
+        con.close()
+        if row is None:
+            return None
+        return row["seed"]
+
+    def _get_latest_open_campaign_level_run_id(self, campaign_run_id: int, seed: str):
+        con = self.get_connection()
+        cur = con.cursor()
+        cur.execute("""
+            SELECT id
+            FROM campaign_level_runs
+            WHERE campaign_run_id = ? AND seed = ? AND completed_at IS NULL
+            ORDER BY id DESC
+            LIMIT 1
+        """, (campaign_run_id, seed))
+        row = cur.fetchone()
+        con.close()
+        if row is None:
+            return None
+        return row["id"]
+
+    def close_active_campaign_level_run(self, campaign_run_id: int, seed: str, result_text: str, is_solved: int = 0, elapsed_time=None):
+        row_id = self._get_latest_open_campaign_level_run_id(campaign_run_id, seed)
+        if row_id is None:
+            return
+
+        con = self.get_connection()
+        cur = con.cursor()
+        cur.execute("""
+            UPDATE campaign_level_runs
+            SET completed_at = CURRENT_TIMESTAMP,
+                elapsed_time = ?,
+                result_text = ?,
+                is_solved = ?
+            WHERE id = ?
+        """, (elapsed_time, result_text, int(is_solved), row_id))
+        con.commit()
+        con.close()
+
+    def complete_campaign_level_run(self, campaign_run_id: int, seed: str, elapsed_time: float, result_text: str, is_solved: int = 1):
+        row_id = self._get_latest_open_campaign_level_run_id(campaign_run_id, seed)
+
+        con = self.get_connection()
+        cur = con.cursor()
+
+        if row_id is None:
+            run = self.get_campaign_run(campaign_run_id)
+            level = run["current_level"] if run else 1
+            cur.execute("""
+                INSERT INTO campaign_level_runs (campaign_run_id, campaign_level, seed, completed_at, elapsed_time, result_text, is_solved)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?)
+            """, (campaign_run_id, int(level), seed, float(elapsed_time), result_text, int(is_solved)))
+        else:
+            cur.execute("""
+                UPDATE campaign_level_runs
+                SET completed_at = CURRENT_TIMESTAMP,
+                    elapsed_time = ?,
+                    result_text = ?,
+                    is_solved = ?
+                WHERE id = ?
+            """, (float(elapsed_time), result_text, int(is_solved), row_id))
+
+        con.commit()
+        con.close()
+
+    def sum_campaign_elapsed_time(self, campaign_run_id: int):
+        con = self.get_connection()
+        cur = con.cursor()
+        cur.execute("""
+            SELECT COALESCE(SUM(elapsed_time), 0)
+            FROM campaign_level_runs
+            WHERE campaign_run_id = ? AND is_solved = 1
+        """, (campaign_run_id,))
+        total = cur.fetchone()[0]
+        con.close()
+        return float(total or 0)
+
+    def complete_campaign_run(self, campaign_run_id: int, total_elapsed_time: float):
+        con = self.get_connection()
+        cur = con.cursor()
+        cur.execute("""
+            UPDATE campaign_runs
+            SET completed_at = CURRENT_TIMESTAMP,
+                total_elapsed_time = ?
+            WHERE id = ?
+        """, (float(total_elapsed_time), campaign_run_id))
+        con.commit()
+        con.close()
+
+    def upsert_campaign_leaderboard(self, user_id: int, elapsed_time: float):
+        user_row = self.getUserInfo(user_id)
+        if not user_row:
+            return []
+
+        con = self.get_connection()
+        cur = con.cursor()
+        cur.execute("""
+            SELECT *
+            FROM campaign_leaderboard
+            WHERE user_id = ?
+        """, (user_id,))
+        row = cur.fetchone()
+
+        if row is None:
+            cur.execute("""
+                INSERT INTO campaign_leaderboard (user_id, username, elapsed_time)
+                VALUES (?, ?, ?)
+            """, (user_id, user_row["username"], float(elapsed_time)))
+        else:
+            keep_time = min(float(row["elapsed_time"]), float(elapsed_time))
+            cur.execute("""
+                UPDATE campaign_leaderboard
+                SET username = ?, elapsed_time = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE user_id = ?
+            """, (user_row["username"], keep_time, user_id))
+
+        con.commit()
+        con.close()
+        return self.get_campaign_leaderboard_top5()
+
+    def get_campaign_leaderboard_top5(self):
+        con = self.get_connection()
+        cur = con.cursor()
+        cur.execute("""
+            SELECT user_id, username, elapsed_time
+            FROM campaign_leaderboard
+            ORDER BY elapsed_time ASC, username ASC, id ASC
+            LIMIT 5
+        """)
         rows = cur.fetchall()
         con.close()
         return rows
@@ -351,6 +668,7 @@ def load_puzzles(import_path=None):
 
     import_puzzles_from_file(db, import_path)
     print(f"puzzle import finished from: {import_path}")
+
 
 def reset_db(import_path=None):
     from puzzle_importer import import_puzzles_from_file
