@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>KakuroGame - Seeded Puzzle</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
+
 <body>
     <div class="grid-bg"></div>
     <div class="container" style="max-width:720px;">
@@ -14,111 +16,117 @@
             <p class="subtitle">Seeded Puzzle</p>
 
             {% if error %}
-                <div class="alert alert-error">{{ error }}</div>
-                <div class="switch-link">
-                    <p><a href="{{ url_for('seed_entry') }}">Try another seed</a> &nbsp;|&nbsp; <a href="{{ url_for('dashboard') }}">Back to Menu</a></p>
-                </div>
+            <div class="alert alert-error">{{ error }}</div>
+            <div class="switch-link">
+                <p><a href="{{ url_for('seed_entry') }}">Try another seed</a> &nbsp;|&nbsp; <a
+                        href="{{ url_for('dashboard') }}">Back to Menu</a></p>
+            </div>
             {% else %}
-                <p class="info-text">
-                    Seed: <strong style="color:#e2b714;font-size:0.75rem;word-break:break-all;">{{ puzzle.seed }}</strong>
-                </p>
-                <p class="info-text">
-                    {{ puzzle.difficulty }} &nbsp;|&nbsp; Level {{ puzzle.campaign_level }}
-                </p>
+            <p class="info-text">
+                Seed: <strong style="color:#e2b714;font-size:0.75rem;word-break:break-all;">{{ puzzle.seed }}</strong>
+            </p>
+            <p class="info-text">
+                {{ puzzle.difficulty }} &nbsp;|&nbsp; Level {{ puzzle.campaign_level }}
+            </p>
 
-                {% if elapsed_time is not none %}
-                    <p class="info-text timer-text">Elapsed Time: {{ '%.2f'|format(elapsed_time) }}s</p>
-                {% endif %}
+            {% if elapsed_time is not none %}
+            <p class="info-text timer-text">Elapsed Time: {{ '%.2f'|format(elapsed_time) }}s</p>
+            {% endif %}
 
-                {% if result_message %}
-                    <div class="alert {% if result_type == 'success' %}alert-success{% else %}alert-error{% endif %}">{{ result_message }}</div>
-                {% endif %}
+            {% if result_message %}
+            <div class="alert {% if result_type == 'success' %}alert-success{% else %}alert-error{% endif %}">{{
+                result_message }}</div>
+            {% endif %}
 
-                {% if grid %}
-                <div class="kakuro-board-wrap">
-                    <table class="kakuro-board" id="kakuro-grid">
-                        {% for row in grid %}
+            {% if grid %}
+            <div class="kakuro-board-wrap">
+                <table class="kakuro-board" id="kakuro-grid">
+                    {% for row in grid %}
+                    <tr>
+                        {% for cell in row %}
+                        {% if cell.cell_type == "black" %}
+                        <td class="kc-black"></td>
+                        {% elif cell.cell_type == "clue" %}
+                        <td class="kc-clue">
+                            <div class="kc-clue-inner">
+                                <span class="kc-down">{% if cell.clue_down %}{{ cell.clue_down }}{% endif %}</span>
+                                <span class="kc-right">{% if cell.clue_right %}{{ cell.clue_right }}{% endif %}</span>
+                            </div>
+                        </td>
+                        {% else %}
+                        <td class="kc-play">
+                            <input type="text" inputmode="text" maxlength="1"
+                                class="kc-input{% if cell.is_invalid %} kc-input-invalid{% endif %}"
+                                data-flat-idx="{{ cell.flat_idx }}" value="{{ cell.value }}" {% if cell.is_locked
+                                %}disabled{% endif %}>
+                        </td>
+                        {% endif %}
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </table>
+            </div>
+            {% endif %}
+
+            <div class="seed-actions">
+                <form method="POST" action="{{ url_for('seed_check') }}">
+                    <button type="submit" class="btn" {% if locked %}disabled{% endif %}>Check Puzzle</button>
+                </form>
+
+                <form method="POST" action="{{ url_for('seed_back') }}">
+                    <button type="submit" class="btn secondary">Back to Campaign</button>
+                </form>
+
+                <form method="POST" action="{{ url_for('seed_complete') }}">
+                    <button type="submit" class="btn secondary">Complete Seeded Puzzle</button>
+                </form>
+            </div>
+
+            {% if leaderboard_rows %}
+            <div class="leaderboard-wrap">
+                <h3>Puzzle Leaderboard</h3>
+                <table class="leaderboard-table">
+                    <thead>
                         <tr>
-                            {% for cell in row %}
-                                {% if cell.cell_type == "black" %}
-                                    <td class="kc-black"></td>
-                                {% elif cell.cell_type == "clue" %}
-                                    <td class="kc-clue">
-                                        <div class="kc-clue-inner">
-                                            <span class="kc-down">{% if cell.clue_down %}{{ cell.clue_down }}{% endif %}</span>
-                                            <span class="kc-right">{% if cell.clue_right %}{{ cell.clue_right }}{% endif %}</span>
-                                        </div>
-                                    </td>
-                                {% else %}
-                                    <td class="kc-play">
-                                        <input
-                                            type="text"
-                                            inputmode="numeric"
-                                            maxlength="1"
-                                            class="kc-input{% if cell.is_invalid %} kc-input-invalid{% endif %}"
-                                            data-flat-idx="{{ cell.flat_idx }}"
-                                            value="{{ cell.value }}"
-                                            {% if cell.is_locked %}disabled{% endif %}
-                                        >
-                                    </td>
-                                {% endif %}
-                            {% endfor %}
+                            <th>#</th>
+                            <th>Player</th>
+                            <th>Best Time</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in leaderboard_rows %}
+                        <tr>
+                            <td>{{ loop.index }}</td>
+                            <td>{{ row.username }}</td>
+                            <td>{{ '%.2f'|format(row.elapsed_time) }}s</td>
                         </tr>
                         {% endfor %}
-                    </table>
-                </div>
-                {% endif %}
-
-                <div class="seed-actions">
-                    <form method="POST" action="{{ url_for('seed_check') }}">
-                        <button type="submit" class="btn" {% if locked %}disabled{% endif %}>Check Puzzle</button>
-                    </form>
-
-                    <form method="POST" action="{{ url_for('seed_back') }}">
-                        <button type="submit" class="btn secondary">Back to Campaign</button>
-                    </form>
-
-                    <form method="POST" action="{{ url_for('seed_complete') }}">
-                        <button type="submit" class="btn secondary">Complete Seeded Puzzle</button>
-                    </form>
-                </div>
-
-                {% if leaderboard_rows %}
-                <div class="leaderboard-wrap">
-                    <h3>Puzzle Leaderboard</h3>
-                    <table class="leaderboard-table">
-                        <thead>
-                            <tr>
-                                <th>#</th>
-                                <th>Player</th>
-                                <th>Best Time</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for row in leaderboard_rows %}
-                            <tr>
-                                <td>{{ loop.index }}</td>
-                                <td>{{ row.username }}</td>
-                                <td>{{ '%.2f'|format(row.elapsed_time) }}s</td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-                {% endif %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
             {% endif %}
         </div>
     </div>
 
     <script>
         const inputs = document.querySelectorAll('.kc-input');
-        inputs.forEach((input) => {
-            input.addEventListener('input', () => {
-                input.value = input.value.replace(/[^1-9]/g, '').slice(0, 1);
-            });
 
+        function paintInvalidCells(invalidPositions) {
+            const bad = new Set((invalidPositions || []).map(String));
+
+            document.querySelectorAll('.kc-input').forEach((el) => {
+                el.classList.remove('kc-input-invalid');
+
+                if (bad.has(el.dataset.flatIdx)) {
+                    el.classList.add('kc-input-invalid');
+                }
+            });
+        }
+
+        inputs.forEach((input) => {
             input.addEventListener('change', async () => {
-                const value = input.value.trim();
+                const value = input.value;
                 const position = input.dataset.flatIdx;
 
                 const resp = await fetch('{{ url_for("seed_fill") }}', {
@@ -129,18 +137,18 @@
 
                 const data = await resp.json();
 
-                document.querySelectorAll('.kc-input').forEach((el) => {
-                    el.classList.remove('kc-input-invalid');
-                });
+                if (data.value !== undefined) {
+                    input.value = data.value || '';
+                }
 
-                if (!data.ok) {
-                    input.classList.add('kc-input-invalid');
-                    input.value = data.value || '';
-                } else {
-                    input.value = data.value || '';
+                paintInvalidCells(data.invalid_positions || []);
+
+                if (!data.ok && data.error) {
+                    console.log(data.error);
                 }
             });
         });
     </script>
 </body>
+
 </html>

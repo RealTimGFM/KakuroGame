@@ -1,4 +1,3 @@
-# progression.py
 from flask import flash, session
 from typing import Optional, Dict, Any
 from puzzle import Puzzle
@@ -9,17 +8,11 @@ class Progression:
     def __init__(self, db):
         self.db = db
 
-    def displayError(self, msg: str):
-        flash(msg, "error")
-
-    def _clearSeededPlayState(self):
-        p = Puzzle(self.db)
-        p.resetPlayState()
-
     def setMode(self, mode: str):
         m = (mode or "").strip()
+
         if m not in ("Campaign", "Single Puzzle"):
-            self.displayError("Invalid mode.")
+            flash("Invalid mode.", "error")
             return
 
         uid = session.get("user_id")
@@ -37,10 +30,11 @@ class Progression:
         try:
             lvl = int(level)
         except Exception:
-            self.displayError("Invalid level.")
+            flash("Invalid level.", "error")
             return
+
         if lvl < 1:
-            self.displayError("Invalid level.")
+            flash("Invalid level.", "error")
             return
 
         uid = session.get("user_id")
@@ -74,15 +68,16 @@ class Progression:
 
     def enterPuzzleSeed(self, seed: str) -> Optional[Dict[str, Any]]:
         p = Puzzle(self.db)
+
         if not p.checkSeed(seed):
-            self.displayError("Seed not found (or invalid).")
+            flash("Seed not found (or invalid).", "error")
             return None
 
         self.setMode("Single Puzzle")
 
         payload = p.displayPuzzle()
         if payload is None:
-            self.displayError("Puzzle load failed.")
+            flash("Puzzle load failed.", "error")
             return None
 
         seed_norm = payload["seed"]
@@ -100,28 +95,46 @@ class Progression:
 
         return payload
 
-    # Enter seeded mode: load the puzzle and store the seed in the session.
-    # Returns the puzzle payload dict, or None if the seed is invalid.
     def enterSeededMode(self, seed: str) -> Optional[Dict[str, Any]]:
         payload = self.enterPuzzleSeed(seed)
         if payload is None:
             return None
-        self._clearSeededPlayState()
+
+        session.pop("seeded_puzzle_board", None)
+        session.pop("seeded_puzzle_invalid_positions", None)
+        session.pop("seeded_puzzle_locked", None)
+        session.pop("seeded_puzzle_started_at", None)
+        session.pop("seeded_puzzle_stopped_at", None)
+        session.pop("seeded_puzzle_elapsed_time", None)
+        session.pop("seeded_puzzle_result", None)
+        session.pop("seeded_puzzle_result_type", None)
+
         session["seeded_puzzle_seed"] = payload["seed"]
         return payload
 
-    # Exit seeded mode: clear the seeded seed from session and return to Campaign.
     def exitSeededMode(self):
         session.pop("seeded_puzzle_seed", None)
-        self._clearSeededPlayState()
+        session.pop("seeded_puzzle_board", None)
+        session.pop("seeded_puzzle_invalid_positions", None)
+        session.pop("seeded_puzzle_locked", None)
+        session.pop("seeded_puzzle_started_at", None)
+        session.pop("seeded_puzzle_stopped_at", None)
+        session.pop("seeded_puzzle_elapsed_time", None)
+        session.pop("seeded_puzzle_result", None)
+        session.pop("seeded_puzzle_result_type", None)
         self.returnCampaign()
 
-    # Called when a seeded puzzle is completed.
-    # Logged-in: restores Campaign mode (keeps their DB campaign level).
-    # Guest: resets to Campaign mode at level 1.
     def completeSeededPuzzle(self):
         session.pop("seeded_puzzle_seed", None)
-        self._clearSeededPlayState()
+        session.pop("seeded_puzzle_board", None)
+        session.pop("seeded_puzzle_invalid_positions", None)
+        session.pop("seeded_puzzle_locked", None)
+        session.pop("seeded_puzzle_started_at", None)
+        session.pop("seeded_puzzle_stopped_at", None)
+        session.pop("seeded_puzzle_elapsed_time", None)
+        session.pop("seeded_puzzle_result", None)
+        session.pop("seeded_puzzle_result_type", None)
+
         uid = session.get("user_id")
         if isinstance(uid, int):
             self.db.ensure_progression_row(uid)
@@ -132,6 +145,7 @@ class Progression:
 
     def updatePlayerTime(self, seed: str, elapsed_time: float, user_id: Optional[int] = None):
         uid = user_id if isinstance(user_id, int) else session.get("user_id")
+
         if not isinstance(uid, int):
             return []
 

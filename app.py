@@ -4,6 +4,7 @@ from registered_user import RegisteredUser
 from progression import Progression
 import os
 import json as _json
+import time as _time
 
 
 # Parse puzzle_data JSON string and build a 2D grid list for template rendering.
@@ -219,15 +220,34 @@ def create_app(db_path=None, testing=False):
             )
 
         puzzle = p.displayPuzzle()
-        p.ensurePlayState()
-        play_summary = p.getPlaySummary()
+
+        if session.get("seeded_puzzle_started_at") is None:
+            session["seeded_puzzle_started_at"] = _time.time()
+
+        board = session.get("seeded_puzzle_board", {})
+        if not isinstance(board, dict):
+            board = {}
+            session["seeded_puzzle_board"] = board
+
+        invalid_positions = session.get("seeded_puzzle_invalid_positions", [])
+        if not isinstance(invalid_positions, list):
+            invalid_positions = []
+            session["seeded_puzzle_invalid_positions"] = invalid_positions
+
+        locked = session.get("seeded_puzzle_locked", False) is True
+        result_message = session.get("seeded_puzzle_result")
+        result_type = session.get("seeded_puzzle_result_type")
+        elapsed_time = session.get("seeded_puzzle_elapsed_time")
+
         grid, grid_w, grid_h = build_puzzle_grid(
             puzzle["puzzle_data"],
-            board=play_summary["board"],
-            invalid_positions=play_summary["invalid_positions"],
-            locked=play_summary["locked"],
+            board=board,
+            invalid_positions=invalid_positions,
+            locked=locked,
         )
+
         leaderboard_rows = db.get_leaderboard_by_seed(seed)
+
         return render_template(
             "seed_play.html",
             error=None,
@@ -235,13 +255,12 @@ def create_app(db_path=None, testing=False):
             grid=grid,
             grid_w=grid_w,
             grid_h=grid_h,
-            result_message=play_summary["result"],
-            result_type=play_summary["result_type"],
-            elapsed_time=play_summary["elapsed_time"],
+            result_message=result_message,
+            result_type=result_type,
+            elapsed_time=elapsed_time,
             leaderboard_rows=leaderboard_rows,
-            locked=play_summary["locked"],
+            locked=locked,
         )
-
     # Update one playable cell in the seeded puzzle.
     @app.route("/seed/fill", methods=["POST"])
     def seed_fill():
