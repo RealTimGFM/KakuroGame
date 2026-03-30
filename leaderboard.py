@@ -11,3 +11,11 @@ class Leaderboard:
 
         rows = self.db.compareTime(user_id, seed, float(elapsed_time)) or []
         return sorted(rows, key=lambda row: (float(row["elapsed_time"]), str(row["username"])))
+
+    def setCampaignLeaderboard(self, user_id: int, elapsed_time: float):
+        user_row = self.db.getUserInfo(user_id)
+        if not user_row:
+            return []
+
+        rows = self.db.compareCampaignTime(user_id, float(elapsed_time)) or []
+        return sorted(rows, key=lambda row: (float(row["elapsed_time"]), str(row["username"])))

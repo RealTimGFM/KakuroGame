@@ -2,11 +2,17 @@ from flask import flash, session
 from typing import Optional, Dict, Any
 from puzzle import Puzzle
 from leaderboard import Leaderboard
+from campaign import Campaign
 
 
 class Progression:
     def __init__(self, db):
         self.db = db
+
+    def _progress_rank(self, difficulty: str, level: int):
+        campaign = Campaign(self.db)
+        diff = campaign.normalizeDifficulty(difficulty)
+        return (campaign.DIFFICULTIES.index(diff) + 1, int(level))
 
     def setMode(self, mode: str):
         m = (mode or "").strip()
@@ -22,9 +28,16 @@ class Progression:
         else:
             session["guest_mode"] = m
 
-    def returnCampaign(self) -> Dict[str, Any]:
-        self.setMode("Campaign")
-        return {"mode": "Campaign"}
+    def setDifficulty(self, difficulty: str):
+        campaign = Campaign(self.db)
+        diff = campaign.normalizeDifficulty(difficulty)
+
+        uid = session.get("user_id")
+        if isinstance(uid, int):
+            self.db.ensure_progression_row(uid)
+            self.db.set_difficulty(uid, diff)
+        else:
+            session["guest_difficulty"] = diff
 
     def setLevel(self, level: int):
         try:
@@ -48,10 +61,17 @@ class Progression:
         self.db.ensure_progression_row(user_id)
 
         guest_mode = session.get("guest_mode")
+        guest_difficulty = session.get("guest_difficulty")
         guest_level = session.get("guest_level")
 
         if guest_mode in ("Campaign", "Single Puzzle"):
             self.db.set_mode(user_id, guest_mode)
+
+        if guest_difficulty:
+            self.db.set_difficulty(
+                user_id,
+                Campaign(self.db).normalizeDifficulty(guest_difficulty),
+            )
 
         if isinstance(guest_level, int) and guest_level >= 1:
             self.db.set_campaign_level(user_id, guest_level)
@@ -64,7 +84,161 @@ class Progression:
 
         session.pop("guest_games", None)
         session.pop("guest_mode", None)
+        session.pop("guest_difficulty", None)
         session.pop("guest_level", None)
+
+    def playCampaign(self) -> Optional[Dict[str, Any]]:
+        campaign = Campaign(self.db)
+        progress = campaign.checkProgression()
+
+        campaign.startRun()
+        self.setMode("Campaign")
+        campaign.setGame(progress["difficulty"], progress["level"])
+
+        return campaign.loadLevelPuzzle()
+
+    def updateLastUnlockedLevel(self):
+        campaign = Campaign(self.db)
+
+        current_difficulty = campaign.normalizeDifficulty(
+            session.get("campaign_current_difficulty", "Learner")
+        )
+        current_level = int(session.get("campaign_current_level", 1) or 1)
+
+        next_progress = campaign.getNextProgress(current_difficulty, current_level)
+        if next_progress is None:
+            unlocked_difficulty = current_difficulty
+            unlocked_level = current_level
+        else:
+            unlocked_difficulty = next_progress["difficulty"]
+            unlocked_level = next_progress["level"]
+
+        uid = session.get("user_id")
+        if isinstance(uid, int):
+            self.db.ensure_progression_row(uid)
+            row = self.db.get_progression(uid)
+
+            stored_difficulty = campaign.normalizeDifficulty(
+                row["difficulty"] if row and row["difficulty"] else "Learner"
+            )
+            stored_level = int(
+                row["campaign_level"]
+                if row and row["campaign_level"] is not None
+                else 1
+            )
+
+            if self._progress_rank(
+                unlocked_difficulty, unlocked_level
+            ) > self._progress_rank(stored_difficulty, stored_level):
+                self.db.set_difficulty(uid, unlocked_difficulty)
+                self.db.set_campaign_level(uid, unlocked_level)
+        else:
+            stored_difficulty = campaign.normalizeDifficulty(
+                session.get("guest_difficulty", "Learner")
+            )
+            stored_level = int(session.get("guest_level", 1) or 1)
+
+            if self._progress_rank(
+                unlocked_difficulty, unlocked_level
+            ) > self._progress_rank(stored_difficulty, stored_level):
+                session["guest_difficulty"] = unlocked_difficulty
+                session["guest_level"] = unlocked_level
+
+        return {
+            "difficulty": unlocked_difficulty,
+            "level": unlocked_level,
+        }
+
+    def loadNextLevel(self):
+        return Campaign(self.db).loadNextLevel()
+
+    def advanceCampaignAfterPuzzle(self):
+        if session.get("play_context") != "campaign":
+            return {"finished": False}
+
+        campaign = Campaign(self.db)
+        current_difficulty = campaign.normalizeDifficulty(
+            session.get("campaign_current_difficulty", "Learner")
+        )
+        current_level = int(session.get("campaign_current_level", 1) or 1)
+        current_display = campaign.getDisplayLevel(current_difficulty, current_level)
+
+        completed = list(session.get("campaign_completed_levels", []))
+        marker = f"{current_difficulty}:{current_level}"
+        if marker not in completed:
+            completed.append(marker)
+            session["campaign_completed_levels"] = completed
+
+        self.updateLastUnlockedLevel()
+
+        if campaign.isLastProgress(current_difficulty, current_level):
+            total_time = campaign.calculateCampaignTime()
+            rows = []
+
+            uid = session.get("user_id")
+            if isinstance(uid, int):
+                rows = Leaderboard(self.db).setCampaignLeaderboard(uid, total_time)
+
+            campaign.displayMsg(f"Campaign completed in {total_time:.2f}s!", "success")
+
+            for key in (
+                "campaign_active",
+                "campaign_started_at",
+                "campaign_elapsed_time",
+                "campaign_current_difficulty",
+                "campaign_current_level",
+                "campaign_current_seed",
+                "campaign_completed_levels",
+                "campaign_seen_seeds",
+                "campaign_last_message",
+                "play_context",
+            ):
+                session.pop(key, None)
+
+            return {
+                "finished": True,
+                "elapsed_time": total_time,
+                "leaderboard": rows,
+            }
+
+        payload = campaign.loadNextLevel()
+        if payload is None:
+            campaign.displayMsg("No next campaign puzzle was found.", "error")
+
+            for key in (
+                "campaign_active",
+                "campaign_started_at",
+                "campaign_elapsed_time",
+                "campaign_current_difficulty",
+                "campaign_current_level",
+                "campaign_current_seed",
+                "campaign_completed_levels",
+                "campaign_seen_seeds",
+                "campaign_last_message",
+                "play_context",
+            ):
+                session.pop(key, None)
+
+            return {
+                "finished": True,
+                "elapsed_time": None,
+                "leaderboard": [],
+            }
+
+        next_difficulty = campaign.normalizeDifficulty(
+            session.get("campaign_current_difficulty", "Learner")
+        )
+        next_level = int(session.get("campaign_current_level", 1) or 1)
+        next_display = campaign.getDisplayLevel(next_difficulty, next_level)
+
+        campaign.displayMsg(
+            f"Level {current_display} completed. Loading level {next_display}.",
+            "success",
+        )
+        return {
+            "finished": False,
+            "next_seed": payload["seed"],
+        }
 
     def enterPuzzleSeed(self, seed: str) -> Optional[Dict[str, Any]]:
         p = Puzzle(self.db)
@@ -72,6 +246,20 @@ class Progression:
         if not p.checkSeed(seed):
             flash("Seed not found (or invalid).", "error")
             return None
+
+        for key in (
+            "campaign_active",
+            "campaign_started_at",
+            "campaign_elapsed_time",
+            "campaign_current_difficulty",
+            "campaign_current_level",
+            "campaign_current_seed",
+            "campaign_completed_levels",
+            "campaign_seen_seeds",
+            "campaign_last_message",
+            "play_context",
+        ):
+            session.pop(key, None)
 
         self.setMode("Single Puzzle")
 
@@ -110,6 +298,7 @@ class Progression:
         session.pop("seeded_puzzle_result_type", None)
 
         session["seeded_puzzle_seed"] = payload["seed"]
+        session["play_context"] = "single_puzzle"
         return payload
 
     def exitSeededMode(self):
@@ -122,7 +311,22 @@ class Progression:
         session.pop("seeded_puzzle_elapsed_time", None)
         session.pop("seeded_puzzle_result", None)
         session.pop("seeded_puzzle_result_type", None)
-        self.returnCampaign()
+
+        for key in (
+            "campaign_active",
+            "campaign_started_at",
+            "campaign_elapsed_time",
+            "campaign_current_difficulty",
+            "campaign_current_level",
+            "campaign_current_seed",
+            "campaign_completed_levels",
+            "campaign_seen_seeds",
+            "campaign_last_message",
+            "play_context",
+        ):
+            session.pop(key, None)
+
+        self.setMode("Campaign")
 
     def completeSeededPuzzle(self):
         session.pop("seeded_puzzle_seed", None)
@@ -135,15 +339,32 @@ class Progression:
         session.pop("seeded_puzzle_result", None)
         session.pop("seeded_puzzle_result_type", None)
 
+        for key in (
+            "campaign_active",
+            "campaign_started_at",
+            "campaign_elapsed_time",
+            "campaign_current_difficulty",
+            "campaign_current_level",
+            "campaign_current_seed",
+            "campaign_completed_levels",
+            "campaign_seen_seeds",
+            "campaign_last_message",
+            "play_context",
+        ):
+            session.pop(key, None)
+
         uid = session.get("user_id")
         if isinstance(uid, int):
             self.db.ensure_progression_row(uid)
             self.db.set_mode(uid, "Campaign")
         else:
             session["guest_mode"] = "Campaign"
+            session["guest_difficulty"] = "Learner"
             session["guest_level"] = 1
 
-    def updatePlayerTime(self, seed: str, elapsed_time: float, user_id: Optional[int] = None):
+    def updatePlayerTime(
+        self, seed: str, elapsed_time: float, user_id: Optional[int] = None
+    ):
         uid = user_id if isinstance(user_id, int) else session.get("user_id")
 
         if not isinstance(uid, int):

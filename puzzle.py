@@ -40,7 +40,10 @@ class Puzzle:
             "campaign_level": self._row["campaign_level"],
         }
 
-    def resetPlayState(self):
+    def loadPuzzle(self, seed: str) -> Optional[Dict[str, Any]]:
+        if not self.checkSeed(seed):
+            return None
+
         session.pop("seeded_puzzle_board", None)
         session.pop("seeded_puzzle_invalid_positions", None)
         session.pop("seeded_puzzle_locked", None)
@@ -50,12 +53,29 @@ class Puzzle:
         session.pop("seeded_puzzle_result", None)
         session.pop("seeded_puzzle_result_type", None)
 
-    def ensurePlayState(self):
-        if session.get("seeded_puzzle_board") is None:
-            session["seeded_puzzle_board"] = {}
+        payload = self.displayPuzzle()
+        if payload is None:
+            return None
 
-        if session.get("seeded_puzzle_invalid_positions") is None:
-            session["seeded_puzzle_invalid_positions"] = []
+        session["seeded_puzzle_seed"] = payload["seed"]
+        session["seeded_puzzle_started_at"] = time.time()
+        return payload
+
+    def isLocked(self) -> bool:
+        if session.get("seeded_puzzle_locked") is None:
+            session["seeded_puzzle_locked"] = False
+        return session.get("seeded_puzzle_locked", False) is True
+
+    def getPlaySummary(self) -> Dict[str, Any]:
+        board = session.get("seeded_puzzle_board")
+        if not isinstance(board, dict):
+            board = {}
+            session["seeded_puzzle_board"] = board
+
+        invalid_positions = session.get("seeded_puzzle_invalid_positions")
+        if not isinstance(invalid_positions, list):
+            invalid_positions = []
+            session["seeded_puzzle_invalid_positions"] = invalid_positions
 
         if session.get("seeded_puzzle_locked") is None:
             session["seeded_puzzle_locked"] = False
@@ -63,26 +83,9 @@ class Puzzle:
         if session.get("seeded_puzzle_started_at") is None:
             session["seeded_puzzle_started_at"] = time.time()
 
-    def getBoardState(self) -> dict:
-        self.ensurePlayState()
-
-        board = session.get("seeded_puzzle_board", {})
-        if not isinstance(board, dict):
-            board = {}
-            session["seeded_puzzle_board"] = board
-
-        return board
-
-    def isLocked(self) -> bool:
-        self.ensurePlayState()
-        return session.get("seeded_puzzle_locked", False) is True
-
-    def getPlaySummary(self) -> Dict[str, Any]:
-        self.ensurePlayState()
-
         return {
-            "board": dict(session.get("seeded_puzzle_board", {})),
-            "invalid_positions": list(session.get("seeded_puzzle_invalid_positions", [])),
+            "board": dict(board),
+            "invalid_positions": list(invalid_positions),
             "locked": session.get("seeded_puzzle_locked", False) is True,
             "result": session.get("seeded_puzzle_result"),
             "result_type": session.get("seeded_puzzle_result_type"),
@@ -90,9 +93,23 @@ class Puzzle:
         }
 
     def fillCells(self, position, value):
-        self.ensurePlayState()
+        board = session.get("seeded_puzzle_board")
+        if not isinstance(board, dict):
+            board = {}
+            session["seeded_puzzle_board"] = board
 
-        if self.isLocked():
+        invalid_positions = session.get("seeded_puzzle_invalid_positions")
+        if not isinstance(invalid_positions, list):
+            invalid_positions = []
+            session["seeded_puzzle_invalid_positions"] = invalid_positions
+
+        if session.get("seeded_puzzle_locked") is None:
+            session["seeded_puzzle_locked"] = False
+
+        if session.get("seeded_puzzle_started_at") is None:
+            session["seeded_puzzle_started_at"] = time.time()
+
+        if session.get("seeded_puzzle_locked", False) is True:
             return {
                 "ok": False,
                 "error": "Puzzle is locked.",
@@ -110,12 +127,15 @@ class Puzzle:
                     "locked": False,
                 }
 
-        board = self.getBoardState()
         cell = Cell(position, board)
-
         clean_value = "" if value is None else str(value).strip()
 
-        validator = Validator.create(self._row["puzzle_data"], cell.position, clean_value, board)
+        validator = Validator.create(
+            self._row["puzzle_data"],
+            cell.position,
+            clean_value,
+            board,
+        )
         validator.checkInput()
 
         cell.setValue(clean_value)
@@ -139,24 +159,23 @@ class Puzzle:
         }
 
     def lockPuzzle(self):
-        self.ensurePlayState()
+        if session.get("seeded_puzzle_locked") is None:
+            session["seeded_puzzle_locked"] = False
         session["seeded_puzzle_locked"] = True
 
     def stopTimer(self):
-        self.ensurePlayState()
+        if session.get("seeded_puzzle_started_at") is None:
+            session["seeded_puzzle_started_at"] = time.time()
 
         if session.get("seeded_puzzle_stopped_at") is None:
             session["seeded_puzzle_stopped_at"] = time.time()
 
     def calculateTime(self):
-        self.ensurePlayState()
+        if session.get("seeded_puzzle_started_at") is None:
+            session["seeded_puzzle_started_at"] = time.time()
 
         start = session.get("seeded_puzzle_started_at")
         stop = session.get("seeded_puzzle_stopped_at")
-
-        if start is None:
-            start = time.time()
-            session["seeded_puzzle_started_at"] = start
 
         if stop is None:
             stop = time.time()
@@ -181,7 +200,21 @@ class Puzzle:
         return msg
 
     def checkPuzzle(self, progression=None):
-        self.ensurePlayState()
+        board = session.get("seeded_puzzle_board")
+        if not isinstance(board, dict):
+            board = {}
+            session["seeded_puzzle_board"] = board
+
+        invalid_positions = session.get("seeded_puzzle_invalid_positions")
+        if not isinstance(invalid_positions, list):
+            invalid_positions = []
+            session["seeded_puzzle_invalid_positions"] = invalid_positions
+
+        if session.get("seeded_puzzle_locked") is None:
+            session["seeded_puzzle_locked"] = False
+
+        if session.get("seeded_puzzle_started_at") is None:
+            session["seeded_puzzle_started_at"] = time.time()
 
         if not self._row:
             seed = session.get("seeded_puzzle_seed")
@@ -189,7 +222,6 @@ class Puzzle:
                 return {"done": False, "error": "seed not found", "leaderboard": []}
 
         seed = self._row["seed"]
-        board = self.getBoardState()
 
         invalid_positions = []
         seen = set()
@@ -227,8 +259,11 @@ class Puzzle:
 
         if done:
             session["seeded_puzzle_invalid_positions"] = []
-            self.lockPuzzle()
-            self.stopTimer()
+            session["seeded_puzzle_locked"] = True
+
+            if session.get("seeded_puzzle_stopped_at") is None:
+                session["seeded_puzzle_stopped_at"] = time.time()
+
             elapsed_time = self.calculateTime()
             self.displayResult(True, elapsed_time)
 

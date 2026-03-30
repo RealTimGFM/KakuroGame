@@ -9,7 +9,9 @@ class Database:
         if db_path:
             self.db_path = db_path
         else:
-            self.db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), db_name)
+            self.db_path = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), db_name
+            )
 
     def get_connection(self):
         con = sqlite3.connect(self.db_path)
@@ -31,7 +33,8 @@ class Database:
         con = self.get_connection()
         cur = con.cursor()
 
-        cur.execute("""
+        cur.execute(
+            """
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT UNIQUE NOT NULL,
@@ -39,36 +42,45 @@ class Database:
                 password_hash TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
-        """)
+        """
+        )
 
-        cur.execute("""
+        cur.execute(
+            """
             CREATE TABLE IF NOT EXISTS progression (
                 user_id INTEGER PRIMARY KEY,
                 mode TEXT NOT NULL DEFAULT 'Campaign',
+                difficulty TEXT NOT NULL DEFAULT 'Learner',
                 campaign_level INTEGER NOT NULL DEFAULT 1,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
             )
-        """)
+        """
+        )
 
-        cur.execute("""
+        cur.execute(
+            """
             CREATE TABLE IF NOT EXISTS puzzles (
                 seed TEXT PRIMARY KEY,
                 puzzle_data TEXT NOT NULL,
                 difficulty TEXT,
                 campaign_level INTEGER
             )
-        """)
+        """
+        )
 
-        cur.execute("""
+        cur.execute(
+            """
             CREATE TABLE IF NOT EXISTS puzzle_solutions (
                 seed TEXT PRIMARY KEY,
                 solution_data TEXT NOT NULL,
                 FOREIGN KEY(seed) REFERENCES puzzles(seed) ON DELETE CASCADE
             )
-        """)
+        """
+        )
 
-        cur.execute("""
+        cur.execute(
+            """
             CREATE TABLE IF NOT EXISTS user_puzzles (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
@@ -78,9 +90,11 @@ class Database:
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
                 FOREIGN KEY(seed) REFERENCES puzzles(seed) ON DELETE CASCADE
             )
-        """)
+        """
+        )
 
-        cur.execute("""
+        cur.execute(
+            """
             CREATE TABLE IF NOT EXISTS leaderboard (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 seed TEXT NOT NULL,
@@ -93,15 +107,36 @@ class Database:
                 FOREIGN KEY(seed) REFERENCES puzzles(seed) ON DELETE CASCADE,
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
             )
-        """)
-
+        """
+        )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS campaign_leaderboard (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL UNIQUE,
+                username TEXT NOT NULL,
+                elapsed_time REAL NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        """
+        )
         con.commit()
         con.close()
 
         # Safe small migrations for older DB files
+        # Safe small migrations for older DB files
         self._ensure_column("user_puzzles", "completed_at", "completed_at TIMESTAMP")
-        self._ensure_column("user_puzzles", "last_elapsed_time", "last_elapsed_time REAL")
-        self._ensure_column("user_puzzles", "best_elapsed_time", "best_elapsed_time REAL")
+        self._ensure_column(
+            "user_puzzles", "last_elapsed_time", "last_elapsed_time REAL"
+        )
+        self._ensure_column(
+            "user_puzzles", "best_elapsed_time", "best_elapsed_time REAL"
+        )
+        self._ensure_column(
+            "progression", "difficulty", "difficulty TEXT NOT NULL DEFAULT 'Learner'"
+        )
 
     # Users
     def get_user_by_username(self, username: str):
@@ -125,7 +160,7 @@ class Database:
         cur = con.cursor()
         cur.execute(
             "INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)",
-            (username, email, password_hash)
+            (username, email, password_hash),
         )
         con.commit()
         user_id = cur.lastrowid
@@ -148,8 +183,8 @@ class Database:
         exists = cur.fetchone()
         if not exists:
             cur.execute(
-                "INSERT INTO progression (user_id, mode, campaign_level) VALUES (?, 'Campaign', 1)",
-                (user_id,)
+                "INSERT INTO progression (user_id, mode, difficulty, campaign_level) VALUES (?, 'Campaign', 'Learner', 1)",
+                (user_id,),
             )
             con.commit()
         con.close()
@@ -157,22 +192,42 @@ class Database:
     def set_mode(self, user_id: int, mode: str):
         con = self.get_connection()
         cur = con.cursor()
-        cur.execute("""
+        cur.execute(
+            """
             UPDATE progression
             SET mode = ?, updated_at = CURRENT_TIMESTAMP
             WHERE user_id = ?
-        """, (mode, user_id))
+        """,
+            (mode, user_id),
+        )
+        con.commit()
+        con.close()
+
+    def set_difficulty(self, user_id: int, difficulty: str):
+        con = self.get_connection()
+        cur = con.cursor()
+        cur.execute(
+            """
+            UPDATE progression
+            SET difficulty = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = ?
+        """,
+            (difficulty, user_id),
+        )
         con.commit()
         con.close()
 
     def set_campaign_level(self, user_id: int, level: int):
         con = self.get_connection()
         cur = con.cursor()
-        cur.execute("""
+        cur.execute(
+            """
             UPDATE progression
             SET campaign_level = ?, updated_at = CURRENT_TIMESTAMP
             WHERE user_id = ?
-        """, (level, user_id))
+        """,
+            (level, user_id),
+        )
         con.commit()
         con.close()
 
@@ -204,22 +259,51 @@ class Database:
         con.close()
         return row
 
+    def getPuzzleSkill(self, difficulty: str, level: int):
+        con = self.get_connection()
+        cur = con.cursor()
+        cur.execute(
+            """
+            SELECT seed, puzzle_data, difficulty, campaign_level
+            FROM puzzles
+            WHERE difficulty = ? AND campaign_level = ?
+            ORDER BY seed ASC
+            """,
+            (difficulty, int(level)),
+        )
+        rows = cur.fetchall()
+        con.close()
+        return rows
+
+    def get_max_campaign_level_for_difficulty(self, difficulty: str) -> int:
+        con = self.get_connection()
+        cur = con.cursor()
+        cur.execute(
+            "SELECT COALESCE(MAX(campaign_level), 0) AS max_level FROM puzzles WHERE difficulty = ?",
+            (difficulty,),
+        )
+        row = cur.fetchone()
+        con.close()
+        return int(row["max_level"] if row and row["max_level"] is not None else 0)
+
     def mark_user_played_seed(self, user_id: int, seed: str):
         con = self.get_connection()
         cur = con.cursor()
         cur.execute(
             "INSERT OR IGNORE INTO user_puzzles (user_id, seed) VALUES (?, ?)",
-            (user_id, seed)
+            (user_id, seed),
         )
         con.commit()
         con.close()
 
-    def insert_puzzle(self, seed: str, puzzle_data: str, difficulty: str, campaign_level: int) -> None:
+    def insert_puzzle(
+        self, seed: str, puzzle_data: str, difficulty: str, campaign_level: int
+    ) -> None:
         con = self.get_connection()
         cur = con.cursor()
         cur.execute(
             "INSERT INTO puzzles (seed, puzzle_data, difficulty, campaign_level) VALUES (?, ?, ?, ?)",
-            (seed, puzzle_data, difficulty, campaign_level)
+            (seed, puzzle_data, difficulty, campaign_level),
         )
         con.commit()
         con.close()
@@ -229,7 +313,7 @@ class Database:
         cur = con.cursor()
         cur.execute(
             "INSERT INTO puzzle_solutions (seed, solution_data) VALUES (?, ?)",
-            (seed, solution_data)
+            (seed, solution_data),
         )
         con.commit()
         con.close()
@@ -255,7 +339,9 @@ class Database:
             return False
 
         try:
-            current_digits = self._build_digits_from_board(puzzle_row["puzzle_data"], board)
+            current_digits = self._build_digits_from_board(
+                puzzle_row["puzzle_data"], board
+            )
             solution_obj = json.loads(solution_row["solution_data"])
             return current_digits == solution_obj.get("digits", "")
         except Exception:
@@ -268,7 +354,7 @@ class Database:
         cur = con.cursor()
         cur.execute(
             "SELECT best_elapsed_time FROM user_puzzles WHERE user_id = ? AND seed = ?",
-            (user_id, seed)
+            (user_id, seed),
         )
         row = cur.fetchone()
 
@@ -276,13 +362,16 @@ class Database:
         if row and row["best_elapsed_time"] is not None:
             best_time = min(float(row["best_elapsed_time"]), float(elapsed_time))
 
-        cur.execute("""
+        cur.execute(
+            """
             UPDATE user_puzzles
             SET completed_at = CURRENT_TIMESTAMP,
                 last_elapsed_time = ?,
                 best_elapsed_time = ?
             WHERE user_id = ? AND seed = ?
-        """, (float(elapsed_time), best_time, user_id, seed))
+        """,
+            (float(elapsed_time), best_time, user_id, seed),
+        )
         con.commit()
         con.close()
 
@@ -294,23 +383,28 @@ class Database:
         con = self.get_connection()
         cur = con.cursor()
         cur.execute(
-            "SELECT * FROM leaderboard WHERE user_id = ? AND seed = ?",
-            (user_id, seed)
+            "SELECT * FROM leaderboard WHERE user_id = ? AND seed = ?", (user_id, seed)
         )
         row = cur.fetchone()
 
         if row is None:
-            cur.execute("""
+            cur.execute(
+                """
                 INSERT INTO leaderboard (seed, user_id, username, elapsed_time)
                 VALUES (?, ?, ?, ?)
-            """, (seed, user_id, user_row["username"], float(elapsed_time)))
+            """,
+                (seed, user_id, user_row["username"], float(elapsed_time)),
+            )
         else:
             keep_time = min(float(row["elapsed_time"]), float(elapsed_time))
-            cur.execute("""
+            cur.execute(
+                """
                 UPDATE leaderboard
                 SET username = ?, elapsed_time = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE seed = ? AND user_id = ?
-            """, (user_row["username"], keep_time, seed, user_id))
+            """,
+                (user_row["username"], keep_time, seed, user_id),
+            )
 
         con.commit()
         con.close()
@@ -319,12 +413,59 @@ class Database:
     def get_leaderboard_by_seed(self, seed: str):
         con = self.get_connection()
         cur = con.cursor()
-        cur.execute("""
+        cur.execute(
+            """
             SELECT seed, user_id, username, elapsed_time
             FROM leaderboard
             WHERE seed = ?
             ORDER BY elapsed_time ASC, username ASC
-        """, (seed,))
+        """,
+            (seed,),
+        )
+        rows = cur.fetchall()
+        con.close()
+        return rows
+
+    def compareCampaignTime(self, user_id: int, elapsed_time: float):
+        user_row = self.getUserInfo(user_id)
+        if not user_row:
+            return None
+
+        con = self.get_connection()
+        cur = con.cursor()
+        cur.execute("SELECT * FROM campaign_leaderboard WHERE user_id = ?", (user_id,))
+        row = cur.fetchone()
+
+        if row is None:
+            cur.execute(
+                "INSERT INTO campaign_leaderboard (user_id, username, elapsed_time) VALUES (?, ?, ?)",
+                (user_id, user_row["username"], float(elapsed_time)),
+            )
+        else:
+            keep_time = min(float(row["elapsed_time"]), float(elapsed_time))
+            cur.execute(
+                """
+                UPDATE campaign_leaderboard
+                SET username = ?, elapsed_time = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE user_id = ?
+            """,
+                (user_row["username"], keep_time, user_id),
+            )
+
+        con.commit()
+        con.close()
+        return self.get_campaign_leaderboard()
+
+    def get_campaign_leaderboard(self):
+        con = self.get_connection()
+        cur = con.cursor()
+        cur.execute(
+            """
+            SELECT user_id, username, elapsed_time
+            FROM campaign_leaderboard
+            ORDER BY elapsed_time ASC, username ASC
+        """
+        )
         rows = cur.fetchall()
         con.close()
         return rows
@@ -343,7 +484,9 @@ def load_puzzles(import_path=None):
     db.create_tables()
 
     if import_path is None:
-        import_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "puzzles_import.json")
+        import_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "puzzles_import.json"
+        )
 
     if not os.path.exists(import_path):
         print(f"import file not found: {import_path}")
@@ -351,6 +494,7 @@ def load_puzzles(import_path=None):
 
     import_puzzles_from_file(db, import_path)
     print(f"puzzle import finished from: {import_path}")
+
 
 def reset_db(import_path=None):
     from puzzle_importer import import_puzzles_from_file
@@ -367,7 +511,9 @@ def reset_db(import_path=None):
     print(f"new database created: {db.db_path}")
 
     if import_path is None:
-        import_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "puzzles_import.json")
+        import_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "puzzles_import.json"
+        )
 
     if not os.path.exists(import_path):
         print(f"import file not found: {import_path}")
@@ -377,6 +523,7 @@ def reset_db(import_path=None):
     import_puzzles_from_file(db, import_path)
     print(f"database reset complete and puzzles imported from: {import_path}")
 
+
 if __name__ == "__main__":
     # Usage:
     # python database.py Create tables + import default puzzles
@@ -385,7 +532,7 @@ if __name__ == "__main__":
     # python database.py load puzzles_import.json Import puzzles from a custom file
     # python database.py reset
     # python database.py reset puzzles_import.json
-    cmd = "load" 
+    cmd = "load"
     import_path = None
 
     if len(sys.argv) >= 2:

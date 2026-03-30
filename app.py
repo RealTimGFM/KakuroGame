@@ -1,4 +1,13 @@
-from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash
+from flask import (
+    Flask,
+    render_template,
+    request,
+    redirect,
+    url_for,
+    session,
+    jsonify,
+    flash,
+)
 from database import Database
 from registered_user import RegisteredUser
 from progression import Progression
@@ -7,10 +16,13 @@ import json as _json
 import time as _time
 
 
+
 # Parse puzzle_data JSON string and build a 2D grid list for template rendering.
 # Each cell is a dict with: cell_type ("black"|"clue"|"play"),
 # Returns (grid_rows, w, h) or (None, 0, 0)
-def build_puzzle_grid(puzzle_data_str, board=None, invalid_positions=None, locked=False):
+def build_puzzle_grid(
+    puzzle_data_str, board=None, invalid_positions=None, locked=False
+):
     try:
         pd = _json.loads(puzzle_data_str)
         w = pd["w"]
@@ -35,35 +47,41 @@ def build_puzzle_grid(puzzle_data_str, board=None, invalid_positions=None, locke
                 parts = clue_tok.split("/")
                 d_val = int(parts[0])
                 r_val = int(parts[1])
-                row_cells.append({
-                    "cell_type": "clue",
-                    "clue_down": d_val if d_val > 0 else "",
-                    "clue_right": r_val if r_val > 0 else "",
-                    "row": r,
-                    "col": c,
-                    "flat_idx": i,
-                })
+                row_cells.append(
+                    {
+                        "cell_type": "clue",
+                        "clue_down": d_val if d_val > 0 else "",
+                        "clue_right": r_val if r_val > 0 else "",
+                        "row": r,
+                        "col": c,
+                        "flat_idx": i,
+                    }
+                )
             elif mask_bit == "0":
-                row_cells.append({
-                    "cell_type": "play",
-                    "clue_down": "",
-                    "clue_right": "",
-                    "row": r,
-                    "col": c,
-                    "flat_idx": i,
-                    "value": board.get(str(i), ""),
-                    "is_invalid": i in invalid_positions,
-                    "is_locked": locked,
-                })
+                row_cells.append(
+                    {
+                        "cell_type": "play",
+                        "clue_down": "",
+                        "clue_right": "",
+                        "row": r,
+                        "col": c,
+                        "flat_idx": i,
+                        "value": board.get(str(i), ""),
+                        "is_invalid": i in invalid_positions,
+                        "is_locked": locked,
+                    }
+                )
             else:
-                row_cells.append({
-                    "cell_type": "black",
-                    "clue_down": "",
-                    "clue_right": "",
-                    "row": r,
-                    "col": c,
-                    "flat_idx": i,
-                })
+                row_cells.append(
+                    {
+                        "cell_type": "black",
+                        "clue_down": "",
+                        "clue_right": "",
+                        "row": r,
+                        "col": c,
+                        "flat_idx": i,
+                    }
+                )
         grid.append(row_cells)
     return grid, w, h
 
@@ -94,6 +112,18 @@ def create_app(db_path=None, testing=False):
             return redirect(url_for("dashboard"))
         return redirect(url_for("login"))
 
+    @app.route("/campaign/play")
+    def campaign_play():
+        if not _is_authenticated():
+            return redirect(url_for("login"))
+
+        payload = progression_service.playCampaign()
+        if payload is None:
+            flash("No campaign puzzle was found for your current level.", "error")
+            return redirect(url_for("dashboard"))
+
+        return redirect(url_for("seed_play"))
+
     @app.route("/login", methods=["GET", "POST"])
     def login():
         if request.method == "POST":
@@ -113,7 +143,9 @@ def create_app(db_path=None, testing=False):
             password = request.form.get("password", "")
             confirm_password = request.form.get("confirm_password", "")
 
-            user_id = user_service.createAccount(username, email, password, confirm_password)
+            user_id = user_service.createAccount(
+                username, email, password, confirm_password
+            )
             if user_id is not None:
                 progression_service.loadProgression(user_id)
                 return redirect(url_for("dashboard"))
@@ -163,6 +195,7 @@ def create_app(db_path=None, testing=False):
         if request.method == "POST":
             seed = request.form.get("seed", "").strip()
             from puzzle import Puzzle
+
             p = Puzzle(db)
             if not p.checkSeed(seed):
                 return render_template("seed_entry.html", error="seed not found")
@@ -203,6 +236,7 @@ def create_app(db_path=None, testing=False):
             return redirect(url_for("dashboard"))
 
         from puzzle import Puzzle
+
         p = Puzzle(db)
         if not p.checkSeed(seed):
             return render_template(
@@ -217,6 +251,9 @@ def create_app(db_path=None, testing=False):
                 elapsed_time=None,
                 leaderboard_rows=[],
                 locked=False,
+                campaign_active=False,
+                campaign_level=None,
+                campaign_total_levels=None,
             )
 
         puzzle = p.displayPuzzle()
@@ -238,7 +275,23 @@ def create_app(db_path=None, testing=False):
         result_message = session.get("seeded_puzzle_result")
         result_type = session.get("seeded_puzzle_result_type")
         elapsed_time = session.get("seeded_puzzle_elapsed_time")
+        campaign_active = session.get("play_context") == "campaign"
+        campaign_level = None
+        campaign_total_levels = None
+        campaign_difficulty = None
 
+        if campaign_active:
+            from campaign import Campaign
+
+            campaign_service = Campaign(db)
+            campaign_difficulty = campaign_service.normalizeDifficulty(
+                session.get("campaign_current_difficulty", "Learner")
+            )
+            current_level = int(session.get("campaign_current_level", 1) or 1)
+
+            campaign_level = campaign_service.getDisplayLevel(campaign_difficulty, current_level)
+            campaign_total_levels = db.get_max_campaign_level_for_difficulty(campaign_difficulty)
+        
         grid, grid_w, grid_h = build_puzzle_grid(
             puzzle["puzzle_data"],
             board=board,
@@ -260,7 +313,12 @@ def create_app(db_path=None, testing=False):
             elapsed_time=elapsed_time,
             leaderboard_rows=leaderboard_rows,
             locked=locked,
+            campaign_active=campaign_active,
+            campaign_level=campaign_level,
+            campaign_total_levels=campaign_total_levels,
+            campaign_difficulty=campaign_difficulty,
         )
+
     # Update one playable cell in the seeded puzzle.
     @app.route("/seed/fill", methods=["POST"])
     def seed_fill():
@@ -272,6 +330,7 @@ def create_app(db_path=None, testing=False):
             return jsonify({"ok": False, "error": "no seeded puzzle"}), 400
 
         from puzzle import Puzzle
+
         p = Puzzle(db)
         if not p.checkSeed(seed):
             return jsonify({"ok": False, "error": "seed not found"}), 404
@@ -296,10 +355,16 @@ def create_app(db_path=None, testing=False):
 
         from puzzle import Puzzle
         p = Puzzle(db)
-        if p.checkSeed(seed):
-            p.checkPuzzle(progression_service)
-        return redirect(url_for("seed_play"))
 
+        if p.checkSeed(seed):
+            result = p.checkPuzzle(progression_service)
+
+            if result.get("done") and session.get("play_context") == "campaign":
+                campaign_result = progression_service.advanceCampaignAfterPuzzle()
+                if campaign_result.get("finished"):
+                    return redirect(url_for("dashboard"))
+
+        return redirect(url_for("seed_play"))
     # Back to Campaign: exit seeded mode and return to the dashboard.
     @app.route("/seed/back", methods=["POST"])
     def seed_back():
