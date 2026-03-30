@@ -11,12 +11,16 @@ class Cell:
 
     def setValue(self, value):
         key = str(self.position)
+
         if value in (None, ""):
             self.board.pop(key, None)
         else:
             self.board[key] = str(value)
+
         return self.board
 
     def highlightCell(self):
-        self.invalid_positions = [self.position]
+        if not isinstance(self.invalid_positions, list):
+            self.invalid_positions = []
+
         return self.invalid_positions
