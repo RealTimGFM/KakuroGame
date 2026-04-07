@@ -9,11 +9,6 @@ class Progression:
     def __init__(self, db):
         self.db = db
 
-    def _progress_rank(self, difficulty: str, level: int):
-        campaign = Campaign(self.db)
-        diff = campaign.normalizeDifficulty(difficulty)
-        return (campaign.DIFFICULTIES.index(diff) + 1, int(level))
-
     def setMode(self, mode: str):
         m = (mode or "").strip()
 
@@ -127,9 +122,15 @@ class Progression:
                 else 1
             )
 
-            if self._progress_rank(
-                unlocked_difficulty, unlocked_level
-            ) > self._progress_rank(stored_difficulty, stored_level):
+            unlocked_rank = (
+                campaign.DIFFICULTIES.index(unlocked_difficulty) + 1,
+                int(unlocked_level),
+            )
+            stored_rank = (
+                campaign.DIFFICULTIES.index(stored_difficulty) + 1,
+                int(stored_level),
+            )
+            if unlocked_rank > stored_rank:
                 self.db.set_difficulty(uid, unlocked_difficulty)
                 self.db.set_campaign_level(uid, unlocked_level)
         else:
@@ -138,9 +139,15 @@ class Progression:
             )
             stored_level = int(session.get("guest_level", 1) or 1)
 
-            if self._progress_rank(
-                unlocked_difficulty, unlocked_level
-            ) > self._progress_rank(stored_difficulty, stored_level):
+            unlocked_rank = (
+                campaign.DIFFICULTIES.index(unlocked_difficulty) + 1,
+                int(unlocked_level),
+            )
+            stored_rank = (
+                campaign.DIFFICULTIES.index(stored_difficulty) + 1,
+                int(stored_level),
+            )
+            if unlocked_rank > stored_rank:
                 session["guest_difficulty"] = unlocked_difficulty
                 session["guest_level"] = unlocked_level
 
@@ -161,7 +168,9 @@ class Progression:
             session.get("campaign_current_difficulty", "Learner")
         )
         current_level = int(session.get("campaign_current_level", 1) or 1)
-        current_display = campaign.getDisplayLevel(current_difficulty, current_level)
+        current_display = (
+            f"{campaign.DIFFICULTIES.index(current_difficulty) + 1}-{int(current_level)}"
+        )
 
         completed = list(session.get("campaign_completed_levels", []))
         marker = f"{current_difficulty}:{current_level}"
@@ -171,7 +180,7 @@ class Progression:
 
         self.updateLastUnlockedLevel()
 
-        if campaign.isLastProgress(current_difficulty, current_level):
+        if campaign.isLastRound(current_difficulty, current_level):
             total_time = campaign.calculateCampaignTime()
             rows = []
 
@@ -229,7 +238,9 @@ class Progression:
             session.get("campaign_current_difficulty", "Learner")
         )
         next_level = int(session.get("campaign_current_level", 1) or 1)
-        next_display = campaign.getDisplayLevel(next_difficulty, next_level)
+        next_display = (
+            f"{campaign.DIFFICULTIES.index(next_difficulty) + 1}-{int(next_level)}"
+        )
 
         campaign.displayMsg(
             f"Level {current_display} completed. Loading level {next_display}.",

@@ -289,7 +289,10 @@ def create_app(db_path=None, testing=False):
             )
             current_level = int(session.get("campaign_current_level", 1) or 1)
 
-            campaign_level = campaign_service.getDisplayLevel(campaign_difficulty, current_level)
+            campaign_level = (
+                f"{campaign_service.DIFFICULTIES.index(campaign_difficulty) + 1}-"
+                f"{int(current_level)}"
+            )
             campaign_total_levels = db.get_max_campaign_level_for_difficulty(campaign_difficulty)
         
         grid, grid_w, grid_h = build_puzzle_grid(

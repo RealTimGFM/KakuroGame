@@ -17,11 +17,6 @@ class Campaign:
                 return item
         return "Learner"
 
-    def getDisplayLevel(self, difficulty: str, level: int) -> str:
-        diff = self.normalizeDifficulty(difficulty)
-        diff_num = self.DIFFICULTIES.index(diff) + 1
-        return f"{diff_num}-{int(level)}"
-
     def getNextProgress(self, difficulty: str, level: int):
         diff = self.normalizeDifficulty(difficulty)
         lvl = max(1, int(level))
@@ -42,7 +37,7 @@ class Campaign:
             "level": 1,
         }
 
-    def isLastProgress(self, difficulty: str, level: int) -> bool:
+    def isLastRound(self, difficulty: str, level: int) -> bool:
         diff = self.normalizeDifficulty(difficulty)
         lvl = max(1, int(level))
         max_level = self.db.get_max_campaign_level_for_difficulty(diff)
