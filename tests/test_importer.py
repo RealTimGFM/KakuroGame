@@ -4,7 +4,7 @@ import json
 from puzzle_importer import import_puzzles_from_file, derive_seed_from_v
 
 
-def test_importer_inserts_puzzle_and_solution_separately(tmp_path, db):
+def test_importer_inserts_puzzle_and_solution_separately(workspace_tmp_dir, db):
     data = {
         "puzzles": [
             {
@@ -25,7 +25,7 @@ def test_importer_inserts_puzzle_and_solution_separately(tmp_path, db):
         ]
     }
 
-    f = tmp_path / "puzzles_import.json"
+    f = workspace_tmp_dir / "puzzles_import.json"
     f.write_text(json.dumps(data), encoding="utf-8")
 
     import_puzzles_from_file(db, str(f))

@@ -86,6 +86,7 @@ class Campaign:
             "campaign_active",
             "campaign_started_at",
             "campaign_elapsed_time",
+            "campaign_ineligible",
             "campaign_current_difficulty",
             "campaign_current_level",
             "campaign_current_seed",
@@ -99,8 +100,25 @@ class Campaign:
         session["campaign_active"] = True
         session["play_context"] = "campaign"
         session["campaign_started_at"] = time.time()
+        session["campaign_ineligible"] = False
         session["campaign_completed_levels"] = []
         session["campaign_seen_seeds"] = []
+
+        uid = session.get("user_id")
+        if isinstance(uid, int):
+            self.db.ensure_progression_row(uid)
+            con = self.db.get_connection()
+            cur = con.cursor()
+            cur.execute(
+                """
+                UPDATE progression
+                SET campaign_ineligible = 0, updated_at = CURRENT_TIMESTAMP
+                WHERE user_id = ?
+            """,
+                (uid,),
+            )
+            con.commit()
+            con.close()
 
     def loadLevelPuzzle(self):
         difficulty = self.normalizeDifficulty(

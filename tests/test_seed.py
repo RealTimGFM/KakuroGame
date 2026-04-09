@@ -191,12 +191,14 @@ def test_seed_play_shows_error_if_seed_missing_from_db(client, seed_uuid):
     assert b"seed not found" in resp.data.lower()
 
 
-# What it does: /seed/play page includes Back to Campaign and Complete buttons.
+# What it does: /seed/play page includes Check, Show Solution, Back to Campaign,
+#               and Complete buttons.
 def test_seed_play_has_back_and_complete_buttons(client, db, seed_uuid):
     insert_puzzle(db, seed_uuid, "{}")
     _signup_and_login(client)
     client.post("/seed", data={"seed": seed_uuid})
     resp = client.get("/seed/play")
+    assert b"show_solution" in resp.data
     assert b"/seed/back" in resp.data
     assert b"/seed/complete" in resp.data
 
@@ -360,7 +362,7 @@ def test_seed_play_renders_clue_values(client, db, seed_uuid):
     assert b">11<" in resp.data
 
 
-# What it does: GET /seed/play must NOT expose solution digits or the word "solution"
+# What it does: GET /seed/play must NOT expose stored solution digits or table names
 #               anywhere in the page HTML.
 def test_seed_play_does_not_expose_solution(client, db, seed_uuid):
     pd_str = _make_puzzle_data()
@@ -382,7 +384,30 @@ def test_seed_play_does_not_expose_solution(client, db, seed_uuid):
     assert resp.status_code == 200
 
     html = resp.data.lower()
-    assert b"solution" not in html
     assert b"puzzle_solutions" not in html
+    assert b"digits" not in html
     # Known solution digits "291" or "92" must not appear as a sequence in the HTML
     assert b"291" not in resp.data
+
+
+def test_show_solution_records_puzzle_attempt_for_registered_user(client, db, seed_uuid):
+    from tests.conftest import insert_puzzle_with_solution
+
+    insert_puzzle_with_solution(db, seed_uuid)
+    _signup_and_login(client)
+    client.post("/seed", data={"seed": seed_uuid})
+
+    resp = client.post("/seed/check", data={"show_solution": "1"}, follow_redirects=False)
+    assert resp.status_code in (302, 303)
+
+    con = db.get_connection()
+    cur = con.cursor()
+    cur.execute(
+        "SELECT solution_shown, last_elapsed_time FROM user_puzzles WHERE seed = ?",
+        (seed_uuid,),
+    )
+    row = cur.fetchone()
+    con.close()
+
+    assert int(row["solution_shown"]) == 1
+    assert row["last_elapsed_time"] is not None

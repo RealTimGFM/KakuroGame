@@ -52,6 +52,7 @@ class Database:
                 mode TEXT NOT NULL DEFAULT 'Campaign',
                 difficulty TEXT NOT NULL DEFAULT 'Learner',
                 campaign_level INTEGER NOT NULL DEFAULT 1,
+                campaign_ineligible INTEGER NOT NULL DEFAULT 0,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
             )
@@ -86,6 +87,7 @@ class Database:
                 user_id INTEGER NOT NULL,
                 seed TEXT NOT NULL,
                 played_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                solution_shown INTEGER NOT NULL DEFAULT 0,
                 UNIQUE(user_id, seed),
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
                 FOREIGN KEY(seed) REFERENCES puzzles(seed) ON DELETE CASCADE
@@ -136,6 +138,16 @@ class Database:
         )
         self._ensure_column(
             "progression", "difficulty", "difficulty TEXT NOT NULL DEFAULT 'Learner'"
+        )
+        self._ensure_column(
+            "progression",
+            "campaign_ineligible",
+            "campaign_ineligible INTEGER NOT NULL DEFAULT 0",
+        )
+        self._ensure_column(
+            "user_puzzles",
+            "solution_shown",
+            "solution_shown INTEGER NOT NULL DEFAULT 0",
         )
 
     # Users

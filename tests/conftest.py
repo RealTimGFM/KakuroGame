@@ -1,5 +1,7 @@
 import json
 import sys
+import shutil
+import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -10,8 +12,20 @@ from database import Database
 
 
 @pytest.fixture
-def app(tmp_path):
-    db_file = tmp_path / "test.db"
+def workspace_tmp_dir():
+    base = Path(__file__).resolve().parent / "_tmp"
+    base.mkdir(exist_ok=True)
+    path = base / f"run_{uuid.uuid4().hex}"
+    path.mkdir()
+    try:
+        yield path
+    finally:
+        shutil.rmtree(path, ignore_errors=True)
+
+
+@pytest.fixture
+def app(workspace_tmp_dir):
+    db_file = workspace_tmp_dir / "test.db"
     app = create_app(db_path=str(db_file), testing=True)
     yield app
 

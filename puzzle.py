@@ -1,7 +1,8 @@
 from typing import Optional, Dict, Any
+import json
 import re
 import time
-from flask import session
+from flask import session, has_request_context
 from cell import Cell
 from validator import Validator
 
@@ -35,8 +36,12 @@ class Puzzle:
         if not self._row:
             return None
 
-        self.result = session.get("seeded_puzzle_result")
-        self.result_type = session.get("seeded_puzzle_result_type")
+        if has_request_context():
+            self.result = session.get("seeded_puzzle_result")
+            self.result_type = session.get("seeded_puzzle_result_type")
+        else:
+            self.result = None
+            self.result_type = None
 
         return {
             "seed": self._row["seed"],
@@ -170,6 +175,32 @@ class Puzzle:
             "locked": False,
         }
 
+    def fillGrid(self, digits: str):
+        if not self._row:
+            seed = session.get("seeded_puzzle_seed")
+            if not seed or not self.checkSeed(seed):
+                return None
+
+        try:
+            puzzle_obj = json.loads(self._row["puzzle_data"])
+            width = int(puzzle_obj["w"])
+            height = int(puzzle_obj["h"])
+            mask = str(puzzle_obj["mask"])
+        except Exception:
+            return None
+
+        board = {}
+        for index in range(width * height):
+            if index >= len(mask) or mask[index] != "0":
+                continue
+
+            token = digits[index] if index < len(digits) else "."
+            board[str(index)] = "" if token == "." else str(token)
+
+        session["seeded_puzzle_board"] = board
+        session["seeded_puzzle_invalid_positions"] = []
+        return board
+
     def lockPuzzle(self):
         if session.get("seeded_puzzle_locked") is None:
             session["seeded_puzzle_locked"] = False
@@ -238,6 +269,100 @@ class Puzzle:
             return session["seeded_puzzle_result"]
 
         return self.setResult("Not Solved")
+
+    def showSolution(self, progression=None):
+        if self.isLocked():
+            return {
+                "ok": False,
+                "error": "Puzzle is locked.",
+                "locked": True,
+            }
+
+        if not self._row:
+            seed = session.get("seeded_puzzle_seed")
+            if not seed or not self.checkSeed(seed):
+                return {
+                    "ok": False,
+                    "error": "seed not found",
+                    "locked": False,
+                }
+
+        solution_row = self.db.get_puzzle_solution(self._row["seed"])
+        digits = None
+        if solution_row:
+            try:
+                solution_obj = json.loads(solution_row["solution_data"])
+                raw_digits = solution_obj.get("digits", "")
+                if isinstance(raw_digits, str):
+                    digits = raw_digits
+            except Exception:
+                digits = None
+
+        if not digits:
+            session["seeded_puzzle_result"] = "Solution unavailable."
+            session["seeded_puzzle_result_type"] = "error"
+            self.result = session["seeded_puzzle_result"]
+            self.result_type = session["seeded_puzzle_result_type"]
+            return {
+                "ok": False,
+                "error": "solution unavailable",
+                "locked": False,
+            }
+
+        board = self.fillGrid(digits)
+        if board is None:
+            session["seeded_puzzle_result"] = "Solution unavailable."
+            session["seeded_puzzle_result_type"] = "error"
+            self.result = session["seeded_puzzle_result"]
+            self.result_type = session["seeded_puzzle_result_type"]
+            return {
+                "ok": False,
+                "error": "solution unavailable",
+                "locked": False,
+            }
+
+        self.stopTimer()
+        elapsed_time = self.calculateTime()
+        self.lockPuzzle()
+        session["seeded_puzzle_result"] = f"Solution shown in {elapsed_time:.2f}s"
+        session["seeded_puzzle_result_type"] = "error"
+        self.result = session["seeded_puzzle_result"]
+        self.result_type = session["seeded_puzzle_result_type"]
+
+        seed = self._row["seed"] if self._row else session.get("seeded_puzzle_seed")
+
+        if progression is not None:
+            if session.get("play_context") == "campaign":
+                progression.flagIneligible()
+            if seed:
+                uid = session.get("user_id")
+                if isinstance(uid, int):
+                    self.db.ensure_progression_row(uid)
+                    self.db.mark_user_played_seed(uid, seed)
+                    con = self.db.get_connection()
+                    cur = con.cursor()
+                    cur.execute(
+                        """
+                        UPDATE user_puzzles
+                        SET completed_at = CURRENT_TIMESTAMP,
+                            last_elapsed_time = ?,
+                            solution_shown = 1
+                        WHERE user_id = ? AND seed = ?
+                    """,
+                        (float(elapsed_time), uid, seed),
+                    )
+                    con.commit()
+                    con.close()
+
+        return {
+            "ok": True,
+            "board": dict(board),
+            "invalid_positions": [],
+            "locked": True,
+            "elapsed_time": elapsed_time,
+            "result": session.get("seeded_puzzle_result"),
+            "ineligible": session.get("campaign_ineligible", False) is True,
+        }
 
     def checkPuzzle(self, progression=None):
         board = session.get("seeded_puzzle_board")

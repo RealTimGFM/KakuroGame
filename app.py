@@ -360,14 +360,18 @@ def create_app(db_path=None, testing=False):
         p = Puzzle(db)
 
         if p.checkSeed(seed):
-            result = p.checkPuzzle(progression_service)
+            if request.form.get("show_solution") == "1":
+                p.showSolution(progression_service)
+            else:
+                result = p.checkPuzzle(progression_service)
 
-            if result.get("done") and session.get("play_context") == "campaign":
-                campaign_result = progression_service.advanceCampaign()
-                if campaign_result.get("finished"):
-                    return redirect(url_for("dashboard"))
+                if result.get("done") and session.get("play_context") == "campaign":
+                    campaign_result = progression_service.advanceCampaign()
+                    if campaign_result.get("finished"):
+                        return redirect(url_for("dashboard"))
 
         return redirect(url_for("seed_play"))
+
     # Back to Campaign: exit seeded mode and return to the dashboard.
     @app.route("/seed/back", methods=["POST"])
     def seed_back():

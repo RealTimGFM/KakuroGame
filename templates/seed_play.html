@@ -77,6 +77,11 @@
                     <button type="submit" class="btn" {% if locked %}disabled{% endif %}>Check Puzzle</button>
                 </form>
 
+                <form method="POST" action="{{ url_for('seed_check') }}">
+                    <input type="hidden" name="show_solution" value="1">
+                    <button type="submit" class="btn secondary" {% if locked %}disabled{% endif %}>Show Solution</button>
+                </form>
+
                 <form method="POST" action="{{ url_for('seed_back') }}">
                     <button type="submit" class="btn secondary">Back to Campaign</button>
                 </form>

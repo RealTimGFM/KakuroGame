@@ -161,6 +161,7 @@ class Progression:
             return {"finished": False}
 
         campaign = Campaign(self.db)
+        run_ineligible = session.get("campaign_ineligible", False) is True
         current_difficulty = campaign.normalizeDifficulty(
             session.get("campaign_current_difficulty", "Learner")
         )
@@ -182,15 +183,22 @@ class Progression:
             rows = []
 
             uid = session.get("user_id")
-            if isinstance(uid, int):
+            if isinstance(uid, int) and not run_ineligible:
                 rows = Leaderboard(self.db).setCampaignLeaderboard(uid, total_time)
 
-            campaign.displayMsg(f"Campaign completed in {total_time:.2f}s!", "success")
+            if run_ineligible:
+                campaign.displayMsg(
+                    f"Campaign completed in {total_time:.2f}s, but this run is ineligible.",
+                    "error",
+                )
+            else:
+                campaign.displayMsg(f"Campaign completed in {total_time:.2f}s!", "success")
 
             for key in (
                 "campaign_active",
                 "campaign_started_at",
                 "campaign_elapsed_time",
+                "campaign_ineligible",
                 "campaign_current_difficulty",
                 "campaign_current_level",
                 "campaign_current_seed",
@@ -215,6 +223,7 @@ class Progression:
                 "campaign_active",
                 "campaign_started_at",
                 "campaign_elapsed_time",
+                "campaign_ineligible",
                 "campaign_current_difficulty",
                 "campaign_current_level",
                 "campaign_current_seed",
@@ -259,6 +268,7 @@ class Progression:
             "campaign_active",
             "campaign_started_at",
             "campaign_elapsed_time",
+            "campaign_ineligible",
             "campaign_current_difficulty",
             "campaign_current_level",
             "campaign_current_seed",
@@ -324,6 +334,7 @@ class Progression:
             "campaign_active",
             "campaign_started_at",
             "campaign_elapsed_time",
+            "campaign_ineligible",
             "campaign_current_difficulty",
             "campaign_current_level",
             "campaign_current_seed",
@@ -351,6 +362,7 @@ class Progression:
             "campaign_active",
             "campaign_started_at",
             "campaign_elapsed_time",
+            "campaign_ineligible",
             "campaign_current_difficulty",
             "campaign_current_level",
             "campaign_current_seed",
@@ -365,10 +377,46 @@ class Progression:
         if isinstance(uid, int):
             self.db.ensure_progression_row(uid)
             self.db.set_mode(uid, "Campaign")
+            con = self.db.get_connection()
+            cur = con.cursor()
+            cur.execute(
+                """
+                UPDATE progression
+                SET campaign_ineligible = 0, updated_at = CURRENT_TIMESTAMP
+                WHERE user_id = ?
+            """,
+                (uid,),
+            )
+            con.commit()
+            con.close()
         else:
             session["guest_mode"] = "Campaign"
             session["guest_difficulty"] = "Learner"
             session["guest_level"] = 1
+
+    def flagIneligible(self):
+        if session.get("play_context") != "campaign":
+            return False
+
+        session["campaign_ineligible"] = True
+
+        uid = session.get("user_id")
+        if isinstance(uid, int):
+            self.db.ensure_progression_row(uid)
+            con = self.db.get_connection()
+            cur = con.cursor()
+            cur.execute(
+                """
+                UPDATE progression
+                SET campaign_ineligible = 1, updated_at = CURRENT_TIMESTAMP
+                WHERE user_id = ?
+            """,
+                (uid,),
+            )
+            con.commit()
+            con.close()
+
+        return True
 
     def updatePlayerTime(
         self, seed: str, elapsed_time: float, user_id: Optional[int] = None

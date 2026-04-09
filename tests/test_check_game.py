@@ -41,7 +41,7 @@ def test_check_puzzle_wrong_valid_digit_shows_not_complete(client, db, seed_code
     client.post("/seed/fill", json={"position": 4, "value": "9"})
     r = client.post("/seed/check", follow_redirects=True)
     assert r.status_code == 200
-    assert b"not complete yet" in r.data.lower()
+    assert b"not solved" in r.data.lower()
 
     with client.session_transaction() as sess:
         assert sess.get("seeded_puzzle_locked") is not True
@@ -58,8 +58,48 @@ def test_check_puzzle_completed_locks_board(client, db, seed_code):
     client.post("/seed/fill", json={"position": 8, "value": "2"})
     r = client.post("/seed/check", follow_redirects=True)
     assert r.status_code == 200
-    assert b"puzzle completed" in r.data.lower()
+    assert b"solved in" in r.data.lower()
 
     with client.session_transaction() as sess:
         assert sess.get("seeded_puzzle_locked") is True
         assert sess.get("seeded_puzzle_elapsed_time") is not None
+
+
+def test_show_solution_fills_grid_and_locks_puzzle(client, db, seed_code):
+    insert_puzzle_with_solution(db, seed_code)
+    _login_and_seed(client, seed_code)
+
+    r = client.post("/seed/check", data={"show_solution": "1"}, follow_redirects=True)
+    assert r.status_code == 200
+    assert b"solution shown in" in r.data.lower()
+
+    with client.session_transaction() as sess:
+        assert sess.get("seeded_puzzle_locked") is True
+        assert sess.get("seeded_puzzle_invalid_positions") == []
+        assert sess.get("seeded_puzzle_board") == {
+            "4": "2",
+            "5": "1",
+            "7": "9",
+            "8": "2",
+        }
+        assert sess.get("seeded_puzzle_elapsed_time") is not None
+
+
+def test_show_solution_in_campaign_flags_run_ineligible(client, db, seed_code):
+    insert_puzzle_with_solution(db, seed_code)
+    _login_and_seed(client, seed_code)
+
+    with client.session_transaction() as sess:
+        sess["play_context"] = "campaign"
+        sess["campaign_active"] = True
+        sess["campaign_ineligible"] = False
+
+    r = client.post("/seed/check", data={"show_solution": "1"}, follow_redirects=True)
+    assert r.status_code == 200
+
+    with client.session_transaction() as sess:
+        assert sess.get("campaign_ineligible") is True
+        user_id = sess["user_id"]
+
+    row = db.get_progression(user_id)
+    assert int(row["campaign_ineligible"]) == 1
