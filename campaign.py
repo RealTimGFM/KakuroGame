@@ -1,6 +1,6 @@
 import time
+import random
 from flask import flash, session
-from pool import Pool
 from puzzle import Puzzle
 
 
@@ -109,8 +109,7 @@ class Campaign:
         level = int(session.get("campaign_current_level", 1) or 1)
         seen = list(session.get("campaign_seen_seeds", []))
 
-        pool = Pool(self.db)
-        seed = pool.getRandomPuzzle(difficulty, level, excluded_seeds=seen)
+        seed = self.getRandomPuzzle(difficulty, level, excluded_seeds=seen)
         if not seed:
             return None
 
@@ -125,6 +124,17 @@ class Campaign:
 
         session["campaign_current_seed"] = payload["seed"]
         return payload
+
+    def getRandomPuzzle(self, difficulty: str, level: int, excluded_seeds=None):
+        rows = list(self.db.getPuzzleSkill(difficulty, int(level)) or [])
+        if not rows:
+            return None
+
+        excluded = set(excluded_seeds or [])
+        filtered = [row for row in rows if row["seed"] not in excluded]
+        choices = filtered if filtered else rows
+        picked = random.choice(choices)
+        return picked["seed"]
 
     def loadNextLevel(self):
         current_difficulty = self.normalizeDifficulty(
