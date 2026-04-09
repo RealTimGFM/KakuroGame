@@ -11,6 +11,8 @@ class Puzzle:
         self.db = db
         self._row = None
         self._seed_norm = None
+        self.result = None
+        self.result_type = None
 
     def checkSeed(self, seed: str) -> bool:
         s = (seed or "").strip().lower()
@@ -33,11 +35,16 @@ class Puzzle:
         if not self._row:
             return None
 
+        self.result = session.get("seeded_puzzle_result")
+        self.result_type = session.get("seeded_puzzle_result_type")
+
         return {
             "seed": self._row["seed"],
             "puzzle_data": self._row["puzzle_data"],
             "difficulty": self._row["difficulty"],
             "campaign_level": self._row["campaign_level"],
+            "result": self.result,
+            "result_type": self.result_type,
         }
 
     def loadPuzzle(self, seed: str) -> Optional[Dict[str, Any]]:
@@ -52,6 +59,8 @@ class Puzzle:
         session.pop("seeded_puzzle_elapsed_time", None)
         session.pop("seeded_puzzle_result", None)
         session.pop("seeded_puzzle_result_type", None)
+        self.result = None
+        self.result_type = None
 
         payload = self.displayPuzzle()
         if payload is None:
@@ -83,12 +92,15 @@ class Puzzle:
         if session.get("seeded_puzzle_started_at") is None:
             self.startTimer()
 
+        self.result = session.get("seeded_puzzle_result")
+        self.result_type = session.get("seeded_puzzle_result_type")
+
         return {
             "board": dict(board),
             "invalid_positions": list(invalid_positions),
             "locked": session.get("seeded_puzzle_locked", False) is True,
-            "result": session.get("seeded_puzzle_result"),
-            "result_type": session.get("seeded_puzzle_result_type"),
+            "result": self.result,
+            "result_type": self.result_type,
             "elapsed_time": session.get("seeded_puzzle_elapsed_time"),
         }
 
@@ -197,15 +209,21 @@ class Puzzle:
         if normalized == "solved":
             session["seeded_puzzle_result"] = "Solved"
             session["seeded_puzzle_result_type"] = "success"
+            self.result = session["seeded_puzzle_result"]
+            self.result_type = session["seeded_puzzle_result_type"]
             return session["seeded_puzzle_result"]
 
         if normalized == "not solved":
             session["seeded_puzzle_result"] = "Not Solved"
             session["seeded_puzzle_result_type"] = "error"
+            self.result = session["seeded_puzzle_result"]
+            self.result_type = session["seeded_puzzle_result_type"]
             return session["seeded_puzzle_result"]
 
         session["seeded_puzzle_result"] = str(result)
         session["seeded_puzzle_result_type"] = "error"
+        self.result = session["seeded_puzzle_result"]
+        self.result_type = session["seeded_puzzle_result_type"]
         return session["seeded_puzzle_result"]
 
     def displayResult(self, done: bool, elapsed_time: Optional[float] = None):
@@ -215,6 +233,8 @@ class Puzzle:
                 session["seeded_puzzle_result"] = (
                     f'{session["seeded_puzzle_result"]} in {elapsed_time:.2f}s'
                 )
+                self.result = session["seeded_puzzle_result"]
+                self.result_type = session["seeded_puzzle_result_type"]
             return session["seeded_puzzle_result"]
 
         return self.setResult("Not Solved")
@@ -266,6 +286,8 @@ class Puzzle:
         if invalid_positions:
             session["seeded_puzzle_result"] = "Puzzle has invalid input."
             session["seeded_puzzle_result_type"] = "error"
+            self.result = session["seeded_puzzle_result"]
+            self.result_type = session["seeded_puzzle_result_type"]
 
             return {
                 "done": False,
