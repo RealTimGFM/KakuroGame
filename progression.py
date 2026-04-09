@@ -156,10 +156,7 @@ class Progression:
             "level": unlocked_level,
         }
 
-    def loadNextLevel(self):
-        return Campaign(self.db).loadNextLevel()
-
-    def advanceCampaignAfterPuzzle(self):
+    def advanceCampaign(self):
         if session.get("play_context") != "campaign":
             return {"finished": False}
 

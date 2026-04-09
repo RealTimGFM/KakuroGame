@@ -363,7 +363,7 @@ def create_app(db_path=None, testing=False):
             result = p.checkPuzzle(progression_service)
 
             if result.get("done") and session.get("play_context") == "campaign":
-                campaign_result = progression_service.advanceCampaignAfterPuzzle()
+                campaign_result = progression_service.advanceCampaign()
                 if campaign_result.get("finished"):
                     return redirect(url_for("dashboard"))
 
