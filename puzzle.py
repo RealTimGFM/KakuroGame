@@ -191,19 +191,33 @@ class Puzzle:
         session["seeded_puzzle_elapsed_time"] = elapsed
         return elapsed
 
+    def setResult(self, result: str):
+        normalized = str(result or "").strip().lower()
+
+        if normalized == "solved":
+            session["seeded_puzzle_result"] = "Solved"
+            session["seeded_puzzle_result_type"] = "success"
+            return session["seeded_puzzle_result"]
+
+        if normalized == "not solved":
+            session["seeded_puzzle_result"] = "Not Solved"
+            session["seeded_puzzle_result_type"] = "error"
+            return session["seeded_puzzle_result"]
+
+        session["seeded_puzzle_result"] = str(result)
+        session["seeded_puzzle_result_type"] = "error"
+        return session["seeded_puzzle_result"]
+
     def displayResult(self, done: bool, elapsed_time: Optional[float] = None):
         if done:
-            msg = "Puzzle completed!"
+            self.setResult("Solved")
             if elapsed_time is not None:
-                msg = f"Puzzle completed in {elapsed_time:.2f}s!"
-            session["seeded_puzzle_result"] = msg
-            session["seeded_puzzle_result_type"] = "success"
-            return msg
+                session["seeded_puzzle_result"] = (
+                    f'{session["seeded_puzzle_result"]} in {elapsed_time:.2f}s'
+                )
+            return session["seeded_puzzle_result"]
 
-        msg = "Puzzle is not complete yet."
-        session["seeded_puzzle_result"] = msg
-        session["seeded_puzzle_result_type"] = "error"
-        return msg
+        return self.setResult("Not Solved")
 
     def checkPuzzle(self, progression=None):
         board = session.get("seeded_puzzle_board")
