@@ -58,7 +58,7 @@ class Puzzle:
             return None
 
         session["seeded_puzzle_seed"] = payload["seed"]
-        session["seeded_puzzle_started_at"] = time.time()
+        self.startTimer()
         return payload
 
     def isLocked(self) -> bool:
@@ -81,7 +81,7 @@ class Puzzle:
             session["seeded_puzzle_locked"] = False
 
         if session.get("seeded_puzzle_started_at") is None:
-            session["seeded_puzzle_started_at"] = time.time()
+            self.startTimer()
 
         return {
             "board": dict(board),
@@ -107,7 +107,7 @@ class Puzzle:
             session["seeded_puzzle_locked"] = False
 
         if session.get("seeded_puzzle_started_at") is None:
-            session["seeded_puzzle_started_at"] = time.time()
+            self.startTimer()
 
         if session.get("seeded_puzzle_locked", False) is True:
             return {
@@ -163,16 +163,22 @@ class Puzzle:
             session["seeded_puzzle_locked"] = False
         session["seeded_puzzle_locked"] = True
 
-    def stopTimer(self):
+    def startTimer(self):
         if session.get("seeded_puzzle_started_at") is None:
             session["seeded_puzzle_started_at"] = time.time()
+        session.pop("seeded_puzzle_stopped_at", None)
+        session.pop("seeded_puzzle_elapsed_time", None)
+
+    def stopTimer(self):
+        if session.get("seeded_puzzle_started_at") is None:
+            self.startTimer()
 
         if session.get("seeded_puzzle_stopped_at") is None:
             session["seeded_puzzle_stopped_at"] = time.time()
 
     def calculateTime(self):
         if session.get("seeded_puzzle_started_at") is None:
-            session["seeded_puzzle_started_at"] = time.time()
+            self.startTimer()
 
         start = session.get("seeded_puzzle_started_at")
         stop = session.get("seeded_puzzle_stopped_at")
@@ -214,7 +220,7 @@ class Puzzle:
             session["seeded_puzzle_locked"] = False
 
         if session.get("seeded_puzzle_started_at") is None:
-            session["seeded_puzzle_started_at"] = time.time()
+            self.startTimer()
 
         if not self._row:
             seed = session.get("seeded_puzzle_seed")
