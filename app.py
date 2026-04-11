@@ -16,7 +16,6 @@ import json as _json
 import time as _time
 
 
-
 # Parse puzzle_data JSON string and build a 2D grid list for template rendering.
 # Each cell is a dict with: cell_type ("black"|"clue"|"play"),
 # Returns (grid_rows, w, h) or (None, 0, 0)
@@ -106,6 +105,51 @@ def create_app(db_path=None, testing=False):
     def _is_authenticated():
         return "user_id" in session or session.get("is_guest") is True
 
+    def _show_post_solve_signup_prompt(seed: str) -> bool:
+        return (
+            session.get("is_guest") is True
+            and session.get("post_solve_signup_seed") == seed
+            and session.get("seeded_puzzle_locked", False) is True
+            and session.get("seeded_puzzle_result_type") == "success"
+        )
+
+    def _remember_guest_campaign_finish(elapsed_time):
+        # Store the guest's final eligible campaign time in session,
+        # so signup can migrate it into campaign_leaderboard later.
+        if session.get("is_guest") is not True:
+            return
+
+        if elapsed_time is None:
+            return
+
+        session["guest_campaign_finished_time"] = float(elapsed_time)
+        session["guest_campaign_signup_prompt"] = True
+
+    def _migrate_guest_campaign_finish_to_account(user_id: int):
+        # When a guest signs up after finishing the full campaign,
+        # move the stored guest campaign result into the real leaderboard.
+        raw = session.get("guest_campaign_finished_time")
+        if raw is None:
+            session.pop("guest_campaign_signup_prompt", None)
+            session.pop("post_solve_signup_seed", None)
+            return
+
+        try:
+            elapsed_time = float(raw)
+        except Exception:
+            session.pop("guest_campaign_finished_time", None)
+            session.pop("guest_campaign_signup_prompt", None)
+            session.pop("post_solve_signup_seed", None)
+            return
+
+        db.compareCampaignTime(user_id, elapsed_time)
+
+        session.pop("guest_campaign_finished_time", None)
+        session.pop("guest_campaign_signup_prompt", None)
+        session.pop("post_solve_signup_seed", None)
+
+        flash("Your guest campaign result was saved to your new account.", "success")
+
     @app.route("/")
     def home():
         if _is_authenticated():
@@ -148,6 +192,7 @@ def create_app(db_path=None, testing=False):
             )
             if user_id is not None:
                 progression_service.loadProgression(user_id)
+                _migrate_guest_campaign_finish_to_account(user_id)
                 return redirect(url_for("dashboard"))
             return redirect(url_for("signup"))
 
@@ -169,6 +214,11 @@ def create_app(db_path=None, testing=False):
             username=session.get("username", "Guest"),
             is_guest=(session.get("is_guest") is True),
             seeded_puzzle_seed=session.get("seeded_puzzle_seed"),
+            guest_campaign_signup_prompt=(
+                session.get("is_guest") is True
+                and session.get("guest_campaign_signup_prompt") is True
+            ),
+            guest_campaign_finished_time=session.get("guest_campaign_finished_time"),
         )
 
     @app.route("/logout")
@@ -254,6 +304,10 @@ def create_app(db_path=None, testing=False):
                 campaign_active=False,
                 campaign_level=None,
                 campaign_total_levels=None,
+                campaign_difficulty=None,
+                is_guest=(session.get("is_guest") is True),
+                show_post_solve_signup_prompt=False,
+                warn_before_leave=False,
             )
 
         puzzle = p.displayPuzzle()
@@ -293,8 +347,10 @@ def create_app(db_path=None, testing=False):
                 f"{campaign_service.DIFFICULTIES.index(campaign_difficulty) + 1}-"
                 f"{int(current_level)}"
             )
-            campaign_total_levels = db.get_max_campaign_level_for_difficulty(campaign_difficulty)
-        
+            campaign_total_levels = db.get_max_campaign_level_for_difficulty(
+                campaign_difficulty
+            )
+
         grid, grid_w, grid_h = build_puzzle_grid(
             puzzle["puzzle_data"],
             board=board,
@@ -302,7 +358,10 @@ def create_app(db_path=None, testing=False):
             locked=locked,
         )
 
-        leaderboard_rows = db.get_leaderboard_by_seed(seed)
+        show_leaderboard = not (
+            locked is True and result_type != "success"
+        )
+        leaderboard_rows = db.get_leaderboard_by_seed(seed) if show_leaderboard else []
 
         return render_template(
             "seed_play.html",
@@ -320,6 +379,9 @@ def create_app(db_path=None, testing=False):
             campaign_level=campaign_level,
             campaign_total_levels=campaign_total_levels,
             campaign_difficulty=campaign_difficulty,
+            is_guest=(session.get("is_guest") is True),
+            show_post_solve_signup_prompt=_show_post_solve_signup_prompt(seed),
+            warn_before_leave=(locked is not True),
         )
 
     # Update one playable cell in the seeded puzzle.
@@ -357,6 +419,7 @@ def create_app(db_path=None, testing=False):
             return redirect(url_for("dashboard"))
 
         from puzzle import Puzzle
+
         p = Puzzle(db)
 
         if p.checkSeed(seed):
@@ -365,10 +428,44 @@ def create_app(db_path=None, testing=False):
             else:
                 result = p.checkPuzzle(progression_service)
 
-                if result.get("done") and session.get("play_context") == "campaign":
-                    campaign_result = progression_service.advanceCampaign()
-                    if campaign_result.get("finished"):
-                        return redirect(url_for("dashboard"))
+                if result.get("done"):
+                    if (
+                        session.get("is_guest") is True
+                        and session.get("play_context") != "campaign"
+                    ):
+                        session["post_solve_signup_seed"] = seed
+
+                    if session.get("play_context") == "campaign":
+                        was_guest = session.get("is_guest") is True
+                        was_ineligible = (
+                            session.get("campaign_ineligible", False) is True
+                        )
+
+                        campaign_result = progression_service.advanceCampaign()
+
+                        if campaign_result.get("finished"):
+                            if was_guest and not was_ineligible:
+                                _remember_guest_campaign_finish(
+                                    campaign_result.get("elapsed_time")
+                                )
+
+                            return redirect(url_for("dashboard"))
+
+        return redirect(url_for("seed_play"))
+
+    @app.route("/seed/restart", methods=["POST"])
+    def seed_restart():
+        if not _is_authenticated():
+            return redirect(url_for("login"))
+
+        seed = session.get("seeded_puzzle_seed")
+        if not seed:
+            return redirect(url_for("dashboard"))
+
+        from puzzle import Puzzle
+
+        p = Puzzle(db)
+        p.restartPuzzle()
 
         return redirect(url_for("seed_play"))
 

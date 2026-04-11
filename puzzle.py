@@ -381,6 +381,16 @@ class Puzzle:
         if session.get("seeded_puzzle_started_at") is None:
             self.startTimer()
 
+        if session.get("seeded_puzzle_locked", False) is True:
+            return {
+                "done": False,
+                "error": "Puzzle is locked.",
+                "locked": True,
+                "elapsed_time": session.get("seeded_puzzle_elapsed_time"),
+                "result": session.get("seeded_puzzle_result"),
+                "leaderboard": [],
+            }
+
         if not self._row:
             seed = session.get("seeded_puzzle_seed")
             if not seed or not self.checkSeed(seed):
@@ -453,4 +463,70 @@ class Puzzle:
             "elapsed_time": session.get("seeded_puzzle_elapsed_time"),
             "result": session.get("seeded_puzzle_result"),
             "leaderboard": [],
+        }
+    def restartPuzzle(self):
+        # Make sure the current puzzle row is loaded first.
+        if not self._row:
+            seed = session.get("seeded_puzzle_seed")
+            if not seed or not self.checkSeed(seed):
+                return {
+                    "ok": False,
+                    "error": "seed not found",
+                }
+
+        current_seed = self._row["seed"]
+        next_seed = current_seed
+
+        # Try to load a different puzzle from the same level if possible.
+        difficulty = self._row["difficulty"]
+        campaign_level = self._row["campaign_level"]
+
+        if difficulty is not None and campaign_level is not None:
+            rows = self.db.getPuzzleSkill(difficulty, int(campaign_level)) or []
+
+            for row in rows:
+                if row["seed"] != current_seed:
+                    next_seed = row["seed"]
+                    break
+
+        # Load the selected puzzle row.
+        if not self.checkSeed(next_seed):
+            return {
+                "ok": False,
+                "error": "restart failed",
+            }
+
+        # Clear the current play state.
+        session.pop("seeded_puzzle_board", None)
+        session.pop("seeded_puzzle_invalid_positions", None)
+        session.pop("seeded_puzzle_locked", None)
+        session.pop("seeded_puzzle_started_at", None)
+        session.pop("seeded_puzzle_stopped_at", None)
+        session.pop("seeded_puzzle_elapsed_time", None)
+        session.pop("seeded_puzzle_result", None)
+        session.pop("seeded_puzzle_result_type", None)
+        session.pop("post_solve_signup_seed", None)
+
+        self.result = None
+        self.result_type = None
+
+        payload = self.displayPuzzle()
+        if payload is None:
+            return {
+                "ok": False,
+                "error": "restart failed",
+            }
+
+        session["seeded_puzzle_seed"] = payload["seed"]
+
+        if session.get("play_context") == "campaign":
+            session["campaign_current_seed"] = payload["seed"]
+
+        self.startTimer()
+
+        return {
+            "ok": True,
+            "seed": payload["seed"],
+            "changed_puzzle": payload["seed"] != current_seed,
+            "puzzle": payload,
         }

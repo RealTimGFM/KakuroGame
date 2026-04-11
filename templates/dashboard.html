@@ -37,6 +37,14 @@
                 <p class="dashboard-text">
                     You are playing as a guest. Progress resets when the session ends.
                 </p>
+                {% if guest_campaign_signup_prompt %}
+                <div class="alert alert-success" style="margin-top:16px;">
+                    You finished the full campaign in
+                    {{ '%.2f'|format(guest_campaign_finished_time or 0) }}s.
+                    <a href="{{ url_for('signup') }}">Sign Up</a>
+                    to save this result to the campaign leaderboard.
+                </div>
+                {% endif %}
             {% else %}
                 <p class="dashboard-text">
                     Choose a mode from the top navigation bar to start playing.

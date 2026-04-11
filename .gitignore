@@ -12,3 +12,5 @@ env/
 ~$*.docx
 ~$*.xlsx
 .DS_Store
+*.bkp
+*.drawio.dtmp

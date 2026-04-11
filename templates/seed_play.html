@@ -72,23 +72,43 @@
             </div>
             {% endif %}
 
+            {% if is_guest and show_post_solve_signup_prompt %}
+            <div class="alert alert-success" style="margin-bottom:16px;">
+                Guest puzzle completed.
+                <a href="{{ url_for('signup') }}">Sign Up</a>
+                to save your session progress.
+            </div>
+            {% endif %}
+
             <div class="seed-actions">
                 <form method="POST" action="{{ url_for('seed_check') }}">
-                    <button type="submit" class="btn" {% if locked %}disabled{% endif %}>Check Puzzle</button>
+                    <button type="submit" class="btn" {% if locked %}disabled{% endif %}>
+                        Check Puzzle
+                    </button>
+                </form>
+
+                <form method="POST" action="{{ url_for('seed_restart') }}">
+                    <button type="submit" class="btn secondary" {% if locked %}disabled{% endif %}>
+                        Restart Puzzle
+                    </button>
                 </form>
 
                 <form method="POST" action="{{ url_for('seed_check') }}">
                     <input type="hidden" name="show_solution" value="1">
-                    <button type="submit" class="btn secondary" {% if locked %}disabled{% endif %}>Show Solution</button>
+                    <button type="submit" class="btn secondary" {% if locked %}disabled{% endif %}>
+                        Show Solution
+                    </button>
                 </form>
 
+                {% if campaign_active %}
                 <form method="POST" action="{{ url_for('seed_back') }}">
                     <button type="submit" class="btn secondary">Back to Campaign</button>
                 </form>
-
+                {% else %}
                 <form method="POST" action="{{ url_for('seed_complete') }}">
                     <button type="submit" class="btn secondary">Complete Seeded Puzzle</button>
                 </form>
+                {% endif %}
             </div>
 
             {% if leaderboard_rows %}
@@ -119,6 +139,15 @@
     </div>
 
     <script>
+        const warnBeforeLeave = {{ 'true' if warn_before_leave else 'false' }};
+
+        window.addEventListener('beforeunload', function (e) {
+            if (!warnBeforeLeave) return;
+
+            e.preventDefault();
+            e.returnValue = '';
+        });
+
         const inputs = document.querySelectorAll('.kc-input');
 
         function paintInvalidCells(invalidPositions) {
