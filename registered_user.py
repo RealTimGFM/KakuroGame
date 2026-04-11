@@ -29,8 +29,105 @@ class RegisteredUser:
             return False
         return check_password_hash(user["password_hash"], password)
 
-    # Authenticate an existing user and populate the session.
-    # Removes is_guest so the session is no longer treated as a guest.
+    def checkValid(self, kind: str, value: str) -> bool:
+        uid = session.get("user_id")
+        if not isinstance(uid, int):
+            self.showFailMsg("You must be logged in.")
+            return False
+
+        txt = (value or "").strip()
+
+        if kind == "un":
+            if not txt:
+                self.showFailMsg("Username is required.")
+                return False
+
+            if len(txt) < 3:
+                self.showFailMsg("Username must be at least 3 characters.")
+                return False
+
+            row = self.db.get_user_by_username(txt)
+            if row and int(row["id"]) != uid:
+                self.showFailMsg("Username already taken.")
+                return False
+
+            return True
+
+        if kind == "em":
+            email = txt.lower()
+            if not email:
+                self.showFailMsg("Email is required.")
+                return False
+
+            is_legit = re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email) is not None
+            if not is_legit:
+                self.showFailMsg("Please enter a valid email.")
+                return False
+
+            row = self.db.get_user_by_email(email)
+            if row and int(row["id"]) != uid:
+                self.showFailMsg("Email already registered.")
+                return False
+
+            return True
+
+        if kind == "pass":
+            if not txt:
+                self.showFailMsg("Password is required.")
+                return False
+
+            if len(txt) < 6:
+                self.showFailMsg("Password must be at least 6 characters.")
+                return False
+
+            return True
+
+        self.showFailMsg("Invalid validation type.")
+        return False
+
+    def setUsername(self, username: str):
+        session["username"] = (username or "").strip()
+
+    def setEmail(self, email: str):
+        return (email or "").strip().lower()
+
+    def setHashPass(self, password: str):
+        return generate_password_hash(password or "", method="pbkdf2:sha256")
+
+    def changeUsername(self, username: str) -> bool:
+        if not self.checkValid("un", username):
+            return False
+
+        uid = session.get("user_id")
+        new_username = (username or "").strip()
+
+        self.setUsername(new_username)
+        self.db.update_username(uid, new_username)
+        self.showOkMsg("Username updated successfully.")
+        return True
+
+    def changeEmail(self, email: str) -> bool:
+        if not self.checkValid("em", email):
+            return False
+
+        uid = session.get("user_id")
+        new_email = self.setEmail(email)
+
+        self.db.update_email(uid, new_email)
+        self.showOkMsg("Email updated successfully.")
+        return True
+
+    def changePass(self, password: str) -> bool:
+        if not self.checkValid("pass", password):
+            return False
+
+        uid = session.get("user_id")
+        new_hash = self.setHashPass(password)
+
+        self.db.update_password_hash(uid, new_hash)
+        self.showOkMsg("Password updated successfully.")
+        return True
+
     def login(self, email: str, password: str) -> bool:
         e = (email or "").strip().lower()
         user = self.db.get_user_by_email(e)
@@ -45,8 +142,6 @@ class RegisteredUser:
         self.showOkMsg("Login successful!")
         return True
 
-    # Create a new account and populate the session.
-    # Removes is_guest so the session is no longer treated as a guest.
     def createAccount(self, username: str, email: str, password: str, confirm_password: str) -> Optional[int]:
         username = (username or "").strip()
         email = (email or "").strip().lower()

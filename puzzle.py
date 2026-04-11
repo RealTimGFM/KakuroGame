@@ -465,7 +465,6 @@ class Puzzle:
             "leaderboard": [],
         }
     def restartPuzzle(self):
-        # Make sure the current puzzle row is loaded first.
         if not self._row:
             seed = session.get("seeded_puzzle_seed")
             if not seed or not self.checkSeed(seed):
@@ -477,7 +476,6 @@ class Puzzle:
         current_seed = self._row["seed"]
         next_seed = current_seed
 
-        # Try to load a different puzzle from the same level if possible.
         difficulty = self._row["difficulty"]
         campaign_level = self._row["campaign_level"]
 
@@ -489,14 +487,12 @@ class Puzzle:
                     next_seed = row["seed"]
                     break
 
-        # Load the selected puzzle row.
         if not self.checkSeed(next_seed):
             return {
                 "ok": False,
                 "error": "restart failed",
             }
 
-        # Clear the current play state.
         session.pop("seeded_puzzle_board", None)
         session.pop("seeded_puzzle_invalid_positions", None)
         session.pop("seeded_puzzle_locked", None)

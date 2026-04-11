@@ -80,18 +80,30 @@
             </div>
             {% endif %}
 
+            {% if show_guest_campaign_auth_prompt %}
+            <div class="alert alert-success" style="margin-bottom:16px;">
+                Playing campaign as a guest.
+                <a href="{{ url_for('signup') }}">Sign Up</a>
+                or
+                <a href="{{ url_for('login') }}">Login</a>
+                to save your progress and results.
+            </div>
+            {% endif %}
+
             <div class="seed-actions">
-                <form method="POST" action="{{ url_for('seed_check') }}">
+                <form method="POST" action="{{ url_for('seed_check') }}" class="skip-leave-warning">
                     <button type="submit" class="btn" {% if locked %}disabled{% endif %}>
                         Check Puzzle
                     </button>
                 </form>
 
-                <form method="POST" action="{{ url_for('seed_restart') }}">
+                {% if campaign_active %}
+                <form method="POST" action="{{ url_for('seed_restart') }}" class="skip-leave-warning">
                     <button type="submit" class="btn secondary" {% if locked %}disabled{% endif %}>
                         Restart Puzzle
                     </button>
                 </form>
+                {% endif %}
 
                 <form method="POST" action="{{ url_for('seed_check') }}">
                     <input type="hidden" name="show_solution" value="1">
@@ -108,12 +120,12 @@
                     </button>
                 </form>
                 {% else %}
-                <form method="POST" action="{{ url_for('seed_back') }}">
+                <form method="POST" action="{{ url_for('seed_back') }}" class="skip-leave-warning">
                     <button type="submit" class="btn secondary">Back to Campaign</button>
                 </form>
                 {% endif %}
                 {% else %}
-                <form method="POST" action="{{ url_for('seed_complete') }}">
+                <form method="POST" action="{{ url_for('seed_complete') }}" class="skip-leave-warning">
                     <button type="submit" class="btn secondary">Complete Seeded Puzzle</button>
                 </form>
                 {% endif %}
@@ -148,12 +160,19 @@
 
     <script>
         const warnBeforeLeave = {{ 'true' if warn_before_leave else 'false' }};
+        let allowIntentionalLeave = false;
 
         window.addEventListener('beforeunload', function (e) {
-            if (!warnBeforeLeave) return;
+            if (!warnBeforeLeave || allowIntentionalLeave) return;
 
             e.preventDefault();
             e.returnValue = '';
+        });
+
+        document.querySelectorAll('.skip-leave-warning').forEach((form) => {
+            form.addEventListener('submit', () => {
+                allowIntentionalLeave = true;
+            });
         });
 
         const inputs = document.querySelectorAll('.kc-input');

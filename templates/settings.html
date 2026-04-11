@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KakuroGame - Settings</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="grid-bg"></div>
+
+    <nav class="top-navbar">
+        <div class="nav-left">
+            <a href="{{ url_for('dashboard') }}" class="nav-brand">KakuroGame</a>
+        </div>
+
+        <div class="nav-center">
+            <a href="{{ url_for('dashboard') }}" class="nav-link">Back</a>
+        </div>
+
+        <div class="nav-right">
+            <span class="nav-user">Welcome, {{ session.get('username') }}!</span>
+            <a href="{{ url_for('logout') }}" class="nav-link nav-link-logout">Logout</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="form-card">
+            <h1 class="logo">Settings</h1>
+            <p class="subtitle">Manage your account</p>
+
+            {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+            {% for category, message in messages %}
+            <div class="alert alert-{{ category }}">{{ message }}</div>
+            {% endfor %}
+            {% endif %}
+            {% endwith %}
+
+            <div style="margin-bottom: 24px;">
+                <p class="info-text">Current username: <strong>{{ user_row['username'] }}</strong></p>
+                <p class="info-text">Current email: <strong>{{ user_row['email'] }}</strong></p>
+            </div>
+
+            <div style="display:grid; gap:16px;">
+                <form method="POST" action="{{ url_for('settings_username') }}">
+                    <div class="input-group">
+                        <label for="username">Change Username</label>
+                        <input type="text" id="username" name="username" required>
+                    </div>
+                    <button type="submit" class="btn">Change Username</button>
+                </form>
+
+                <form method="POST" action="{{ url_for('settings_email') }}">
+                    <div class="input-group">
+                        <label for="email">Change Email</label>
+                        <input type="email" id="email" name="email" required>
+                    </div>
+                    <button type="submit" class="btn">Change Email</button>
+                </form>
+
+                <form method="POST" action="{{ url_for('settings_password') }}">
+                    <div class="input-group">
+                        <label for="password">Change Password</label>
+                        <input type="password" id="password" name="password" required>
+                    </div>
+                    <button type="submit" class="btn">Change Password</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

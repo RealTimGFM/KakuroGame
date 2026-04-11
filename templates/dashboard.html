@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>KakuroGame - Game Menu</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
+
 <body>
     <div class="grid-bg"></div>
 
@@ -22,7 +24,11 @@
             {% endif %}
             <a href="{{ url_for('campaign_new_run') }}" class="nav-link">New Run</a>
             <a href="{{ url_for('seed_entry') }}" class="nav-link">Play a Puzzle</a>
-            <a href="#" class="nav-link">Setting</a>
+            {% if not is_guest %}
+            <a href="{{ url_for('settings') }}" class="nav-link">Setting</a>
+            {% else %}
+            <span class="nav-link nav-link-disabled">Setting</span>
+            {% endif %}
         </div>
 
         <div class="nav-right">
@@ -37,24 +43,31 @@
         <div class="dashboard-hero">
             <h1 class="dashboard-title">KakuroGame</h1>
 
+            {% if dashboard_messages %}
+            {% for category, message in dashboard_messages %}
+            <div class="alert alert-{{ category }}">{{ message }}</div>
+            {% endfor %}
+            {% endif %}
+
             {% if is_guest %}
                 <p class="dashboard-text">
                     You are playing as a guest. Progress resets when the session ends.
                 </p>
-                {% if guest_campaign_signup_prompt %}
-                <div class="alert alert-success" style="margin-top:16px;">
-                    You finished the full campaign in
-                    {{ '%.2f'|format(guest_campaign_finished_time or 0) }}s.
-                    <a href="{{ url_for('signup') }}">Sign Up</a>
-                    to save this result to the campaign leaderboard.
-                </div>
-                {% endif %}
+            {% if guest_campaign_signup_prompt %}
+            <div class="alert alert-success" style="margin-top:16px;">
+                You finished the full campaign in
+                {{ '%.2f'|format(guest_campaign_finished_time or 0) }}s.
+                <a href="{{ url_for('signup') }}">Sign Up</a>
+                to save this result to the campaign leaderboard.
+            </div>
+            {% endif %}
             {% else %}
-                <p class="dashboard-text">
-                    Choose a mode from the top navigation bar to start playing.
-                </p>
+            <p class="dashboard-text">
+                Choose a mode from the top navigation bar to start playing.
+            </p>
             {% endif %}
         </div>
     </div>
 </body>
+
 </html>

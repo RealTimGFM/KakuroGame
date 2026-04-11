@@ -7,6 +7,7 @@ from flask import (
     session,
     jsonify,
     flash,
+    get_flashed_messages,
 )
 from database import Database
 from registered_user import RegisteredUser
@@ -157,6 +158,13 @@ def create_app(db_path=None, testing=False):
             and bool(session.get("campaign_current_seed"))
         )
 
+    def _show_guest_campaign_auth_prompt() -> bool:
+        return (
+            session.get("is_guest") is True
+            and session.get("play_context") == "campaign"
+            and session.get("seeded_puzzle_locked", False) is True
+        )
+
     @app.route("/")
     def home():
         if _is_authenticated():
@@ -225,12 +233,19 @@ def create_app(db_path=None, testing=False):
         if not _is_authenticated():
             return redirect(url_for("login"))
 
+        dashboard_messages = [
+            (category, message)
+            for category, message in get_flashed_messages(with_categories=True)
+            if category == "error"
+        ]
+
         return render_template(
             "dashboard.html",
             username=session.get("username", "Guest"),
             is_guest=(session.get("is_guest") is True),
             has_current_campaign_run=_has_current_campaign_run(),
             seeded_puzzle_seed=session.get("seeded_puzzle_seed"),
+            dashboard_messages=dashboard_messages,
             guest_campaign_signup_prompt=(
                 session.get("is_guest") is True
                 and session.get("guest_campaign_signup_prompt") is True
@@ -402,6 +417,7 @@ def create_app(db_path=None, testing=False):
             campaign_difficulty=campaign_difficulty,
             campaign_next_is_finish=campaign_next_is_finish,
             is_guest=(session.get("is_guest") is True),
+            show_guest_campaign_auth_prompt=_show_guest_campaign_auth_prompt(),
             show_post_solve_signup_prompt=_show_post_solve_signup_prompt(seed),
             warn_before_leave=(locked is not True),
         )
@@ -531,6 +547,45 @@ def create_app(db_path=None, testing=False):
             return redirect(url_for("login"))
         progression_service.completeSeededPuzzle()
         return redirect(url_for("dashboard"))
+
+    @app.route("/settings", methods=["GET"])
+    def settings():
+        if "user_id" not in session:
+            return redirect(url_for("login"))
+
+        user_row = db.getUserInfo(session["user_id"])
+        if not user_row:
+            flash("User not found.", "error")
+            return redirect(url_for("dashboard"))
+
+        return render_template("settings.html", user_row=user_row)
+
+    @app.route("/settings/username", methods=["POST"])
+    def settings_username():
+        if "user_id" not in session:
+            return redirect(url_for("login"))
+
+        username = request.form.get("username", "")
+        user_service.changeUsername(username)
+        return redirect(url_for("settings"))
+
+    @app.route("/settings/email", methods=["POST"])
+    def settings_email():
+        if "user_id" not in session:
+            return redirect(url_for("login"))
+
+        email = request.form.get("email", "")
+        user_service.changeEmail(email)
+        return redirect(url_for("settings"))
+
+    @app.route("/settings/password", methods=["POST"])
+    def settings_password():
+        if "user_id" not in session:
+            return redirect(url_for("login"))
+
+        password = request.form.get("password", "")
+        user_service.changePass(password)
+        return redirect(url_for("settings"))
 
     return app
 

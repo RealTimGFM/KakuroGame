@@ -186,7 +186,63 @@ class Database:
         row = cur.fetchone()
         con.close()
         return row
+    def update_username(self, user_id: int, username: str):
+        con = self.get_connection()
+        cur = con.cursor()
+        cur.execute(
+            """
+            UPDATE users
+            SET username = ?
+            WHERE id = ?
+            """,
+            (username, user_id),
+        )
+        cur.execute(
+            """
+            UPDATE leaderboard
+            SET username = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = ?
+            """,
+            (username, user_id),
+        )
+        cur.execute(
+            """
+            UPDATE campaign_leaderboard
+            SET username = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = ?
+            """,
+            (username, user_id),
+        )
+        con.commit()
+        con.close()
 
+    def update_email(self, user_id: int, email: str):
+        con = self.get_connection()
+        cur = con.cursor()
+        cur.execute(
+            """
+            UPDATE users
+            SET email = ?
+            WHERE id = ?
+            """,
+            (email, user_id),
+        )
+        con.commit()
+        con.close()
+
+    def update_password_hash(self, user_id: int, password_hash: str):
+        con = self.get_connection()
+        cur = con.cursor()
+        cur.execute(
+            """
+            UPDATE users
+            SET password_hash = ?
+            WHERE id = ?
+            """,
+            (password_hash, user_id),
+        )
+        con.commit()
+        con.close()
     # Progression
     def ensure_progression_row(self, user_id: int):
         con = self.get_connection()
