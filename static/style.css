@@ -405,6 +405,14 @@ body {
     transform: translateY(-1px);
 }
 
+.nav-link-disabled,
+.nav-link-disabled:hover {
+    background: #3a3a4f;
+    color: #8f92b0;
+    cursor: default;
+    transform: none;
+}
+
 .nav-link-logout {
     background: #2d2f55;
     color: #f5f5f5;

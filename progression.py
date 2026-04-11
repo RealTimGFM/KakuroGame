@@ -249,7 +249,7 @@ class Progression:
         )
 
         campaign.displayMsg(
-            f"Level {current_display} completed. Loading level {next_display}.",
+            f"Level {current_display} completed. Continue to level {next_display}.",
             "success",
         )
         return {

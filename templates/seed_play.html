@@ -101,9 +101,17 @@
                 </form>
 
                 {% if campaign_active %}
+                {% if locked %}
+                <form method="POST" action="{{ url_for('campaign_next') }}">
+                    <button type="submit" class="btn secondary">
+                        {% if campaign_next_is_finish %}Finish Campaign{% else %}Next Puzzle{% endif %}
+                    </button>
+                </form>
+                {% else %}
                 <form method="POST" action="{{ url_for('seed_back') }}">
                     <button type="submit" class="btn secondary">Back to Campaign</button>
                 </form>
+                {% endif %}
                 {% else %}
                 <form method="POST" action="{{ url_for('seed_complete') }}">
                     <button type="submit" class="btn secondary">Complete Seeded Puzzle</button>
