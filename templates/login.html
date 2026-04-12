@@ -10,18 +10,25 @@
 
 <body>
     <div class="grid-bg"></div>
+
     <div class="container">
         <div class="form-card">
-            <h1 class="logo">KakuroGame</h1>
-            <p class="subtitle">Welcome back, puzzler</p>
+            <div class="card-header">
+                <h1 class="logo">KakuroGame</h1>
+                <p class="subtitle">Sign in to continue your saved puzzles, campaign progress, and leaderboard times.</p>
+            </div>
 
             {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
-            {% for category, message in messages %}
-            <div class="alert alert-{{ category }}">{{ message }}</div>
-            {% endfor %}
+            <div class="stack-sm">
+                {% for category, message in messages %}
+                <div class="alert alert-{{ category }}">{{ message }}</div>
+                {% endfor %}
+            </div>
             {% endif %}
             {% endwith %}
+
+            <p class="auth-helper">Use your account details below, or start a quick guest session from the link at the bottom.</p>
 
             <form method="POST" action="{{ url_for('login') }}">
                 <div class="input-group">
@@ -32,7 +39,10 @@
                     <label for="password">Password</label>
                     <input type="password" id="password" name="password" required>
                 </div>
-                <button type="submit" class="btn">Login</button>
+                <button type="submit" class="btn">
+                    <span class="button-icon">></span>
+                    Login
+                </button>
             </form>
 
             <div class="switch-link">
@@ -40,7 +50,7 @@
             </div>
 
             <div class="guest-link">
-                <a href="{{ url_for('play_guest') }}">Play as Guest</a>
+                <p><a href="{{ url_for('play_guest') }}">Continue as Guest</a></p>
             </div>
         </div>
     </div>

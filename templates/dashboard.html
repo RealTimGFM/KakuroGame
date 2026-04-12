@@ -41,31 +41,46 @@
 
     <div class="dashboard-page">
         <div class="dashboard-hero">
-            <h1 class="dashboard-title">KakuroGame</h1>
+            <div class="dashboard-copy">
+                <h1 class="dashboard-title">KakuroGame</h1>
+                <p class="dashboard-text">Choose a mode from the top bar and jump into a puzzle. The layout stays simple, but your current run, guest status, and progress messages are easier to scan from here.</p>
+            </div>
 
             {% if dashboard_messages %}
-            {% for category, message in dashboard_messages %}
-            <div class="alert alert-{{ category }}">{{ message }}</div>
-            {% endfor %}
-            {% endif %}
-
-            {% if is_guest %}
-                <p class="dashboard-text">
-                    You are playing as a guest. Progress resets when the session ends.
-                </p>
-            {% if guest_campaign_signup_prompt %}
-            <div class="alert alert-success" style="margin-top:16px;">
-                You finished the full campaign in
-                {{ '%.2f'|format(guest_campaign_finished_time or 0) }}s.
-                <a href="{{ url_for('signup') }}">Sign Up</a>
-                to save this result to the campaign leaderboard.
+            <div class="dashboard-alerts">
+                {% for category, message in dashboard_messages %}
+                <div class="alert alert-{{ category }}">{{ message }}</div>
+                {% endfor %}
             </div>
             {% endif %}
-            {% else %}
-            <p class="dashboard-text">
-                Choose a mode from the top navigation bar to start playing.
-            </p>
-            {% endif %}
+
+            <div class="dashboard-panels">
+                <div class="dashboard-panel">
+                    <h2><span class="section-title-icon">></span>Menu Guide</h2>
+                    <div class="menu-list">
+                        <div class="menu-list-item"><strong>Campaign</strong><span>Continue your current run when one is active.</span></div>
+                        <div class="menu-list-item"><strong>New Run</strong><span>Start a fresh campaign from the beginning.</span></div>
+                        <div class="menu-list-item"><strong>Play a Puzzle</strong><span>Open a specific board by seed and compare times.</span></div>
+                        <div class="menu-list-item"><strong>Setting</strong><span>Update account details when you are signed in.</span></div>
+                    </div>
+                </div>
+
+                <div class="dashboard-panel">
+                    {% if is_guest %}
+                    <h2><span class="section-title-icon">!</span>Guest Session</h2>
+                    <p>You are playing as a guest. Puzzle progress, campaign runs, and leaderboard eligibility reset when this session ends.</p>
+                    {% if guest_campaign_signup_prompt %}
+                    <div class="alert alert-success" style="margin-top: 16px;">
+                        You finished the full campaign in {{ '%.2f'|format(guest_campaign_finished_time or 0) }}s.
+                        <a href="{{ url_for('signup') }}">Sign Up</a> to save that result to the campaign leaderboard.
+                    </div>
+                    {% endif %}
+                    {% else %}
+                    <h2><span class="section-title-icon">*</span>Account Ready</h2>
+                    <p>Your account is ready for saved campaign progress, puzzle history, and leaderboard submissions. Pick a mode above whenever you want to play.</p>
+                    {% endif %}
+                </div>
+            </div>
         </div>
     </div>
 </body>

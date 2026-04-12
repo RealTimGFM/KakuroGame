@@ -1,37 +1,46 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>KakuroGame - Guest Warning</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
+
 <body>
     <div class="grid-bg"></div>
+
     <div class="container">
         <div class="form-card">
-            <h1 class="logo">KakuroGame</h1>
-            <p class="subtitle">Playing as Guest</p>
-
-            <div class="alert alert-error">
-                You are playing as a guest. Progress is session-only and will not be
-                saved beyond this session.
+            <div class="card-header">
+                <h1 class="logo">KakuroGame</h1>
+                <p class="subtitle">Guest play is available, but progress and leaderboard eligibility are limited to this session.</p>
             </div>
 
-            <p class="info-text">
-                Want to keep your progress?
-                <a href="{{ url_for('signup') }}">Sign Up</a> for a free account.
-            </p>
+            <div class="status-panel alert-error warning-panel">
+                <p class="panel-title"><span class="section-title-icon">!</span>Guest Session Notice</p>
+                <p class="helper-text">If you close the session or leave before creating an account, this puzzle progress will not be kept.</p>
+            </div>
 
-            <form method="POST" action="{{ url_for('seed_confirm') }}">
+            <div class="notice-block">
+                <p class="notice-title"><span class="inline-icon">+</span>Want to save your results?</p>
+                <p class="notice-text">Create a free account first if you want to keep puzzle history, campaign progress, and leaderboard results after this session ends.</p>
+            </div>
+
+            <form method="POST" action="{{ url_for('seed_confirm') }}" style="margin-top: 22px;">
                 <input type="hidden" name="seed" value="{{ seed }}">
-                <button type="submit" class="btn">Continue as Guest</button>
+                <button type="submit" class="btn">
+                    <span class="button-icon">></span>
+                    Continue as Guest
+                </button>
             </form>
 
             <div class="switch-link">
-                <p><a href="{{ url_for('seed_entry') }}">Back</a></p>
+                <p><a href="{{ url_for('signup') }}">Sign Up Instead</a> &nbsp;|&nbsp; <a href="{{ url_for('seed_entry') }}">Back</a></p>
             </div>
         </div>
     </div>
 </body>
+
 </html>
