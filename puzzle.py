@@ -201,7 +201,7 @@ class Puzzle:
         session["seeded_puzzle_invalid_positions"] = []
         return board
 
-    def lockPuzzle(self):
+    def lockGrid(self):
         if session.get("seeded_puzzle_locked") is None:
             session["seeded_puzzle_locked"] = False
         session["seeded_puzzle_locked"] = True
@@ -323,7 +323,7 @@ class Puzzle:
 
         self.stopTimer()
         elapsed_time = self.calculateTime()
-        self.lockPuzzle()
+        self.lockGrid()
         session["seeded_puzzle_result"] = f"Solution shown in {elapsed_time:.2f}s"
         session["seeded_puzzle_result_type"] = "error"
         self.result = session["seeded_puzzle_result"]
