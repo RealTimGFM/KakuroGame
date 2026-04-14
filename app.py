@@ -158,12 +158,73 @@ def create_app(db_path=None, testing=False):
             and bool(session.get("campaign_current_seed"))
         )
 
+    def _can_open_campaign() -> bool:
+        return _has_current_campaign_run() or isinstance(session.get("user_id"), int)
+
     def _show_guest_campaign_auth_prompt() -> bool:
         return (
             session.get("is_guest") is True
             and session.get("play_context") == "campaign"
             and session.get("seeded_puzzle_locked", False) is True
         )
+
+    def _restore_saved_campaign_run():
+        user_id = session.get("user_id")
+        if not isinstance(user_id, int):
+            return None
+
+        db.ensure_progression_row(user_id)
+        row = db.get_progression(user_id)
+        if not row or int(row["run_active"] or 0) != 1:
+            return None
+
+        from campaign import Campaign
+        from puzzle import Puzzle
+
+        campaign_service = Campaign(db)
+        difficulty = campaign_service.normalizeDifficulty(
+            row["run_current_difficulty"] or row["difficulty"] or "Learner"
+        )
+        level = int(row["run_current_level"] or 1)
+        seed = row["run_current_seed"]
+        started_at = row["run_started_at"]
+        ineligible = int(row["campaign_ineligible"] or 0) == 1
+
+        for key in (
+            "campaign_active",
+            "campaign_started_at",
+            "campaign_elapsed_time",
+            "campaign_ineligible",
+            "campaign_current_difficulty",
+            "campaign_current_level",
+            "campaign_current_seed",
+            "campaign_completed_levels",
+            "campaign_seen_seeds",
+            "campaign_last_message",
+            "play_context",
+        ):
+            session.pop(key, None)
+
+        session["campaign_active"] = True
+        session["play_context"] = "campaign"
+        if started_at is not None:
+            session["campaign_started_at"] = float(started_at)
+        session["campaign_ineligible"] = ineligible
+        session["campaign_completed_levels"] = []
+        session["campaign_seen_seeds"] = []
+        campaign_service.setGame(difficulty, level)
+
+        payload = None
+        if seed:
+            puzzle = Puzzle(db)
+            payload = puzzle.loadPuzzle(seed)
+
+        if payload is None:
+            payload = campaign_service.loadLevelPuzzle()
+        else:
+            session["campaign_current_seed"] = payload["seed"]
+
+        return payload
 
     @app.route("/")
     def home():
@@ -176,21 +237,31 @@ def create_app(db_path=None, testing=False):
         if not _is_authenticated():
             return redirect(url_for("login"))
 
-        if not _has_current_campaign_run():
-            flash("No current campaign run. Start a new run to begin.", "error")
-            return redirect(url_for("dashboard"))
+        if _has_current_campaign_run():
+            current_seed = session.get("campaign_current_seed")
+            if session.get("seeded_puzzle_seed") != current_seed:
+                from puzzle import Puzzle
 
-        current_seed = session.get("campaign_current_seed")
-        if session.get("seeded_puzzle_seed") != current_seed:
-            from puzzle import Puzzle
+                puzzle = Puzzle(db)
+                payload = puzzle.loadPuzzle(current_seed)
+                if payload is None:
+                    flash("Your current campaign puzzle could not be resumed.", "error")
+                    return redirect(url_for("dashboard"))
 
-            puzzle = Puzzle(db)
-            payload = puzzle.loadPuzzle(current_seed)
+            return redirect(url_for("seed_play"))
+
+        if isinstance(session.get("user_id"), int):
+            payload = _restore_saved_campaign_run()
             if payload is None:
-                flash("Your current campaign puzzle could not be resumed.", "error")
+                payload = progression_service.playCampaign()
+            if payload is None:
+                flash("No campaign puzzle was found for your saved progression.", "error")
                 return redirect(url_for("dashboard"))
 
-        return redirect(url_for("seed_play"))
+            return redirect(url_for("seed_play"))
+
+        flash("No current campaign run. Start a new run to begin.", "error")
+        return redirect(url_for("dashboard"))
 
     @app.route("/login", methods=["GET", "POST"])
     def login():
@@ -244,6 +315,7 @@ def create_app(db_path=None, testing=False):
             username=session.get("username", "Guest"),
             is_guest=(session.get("is_guest") is True),
             has_current_campaign_run=_has_current_campaign_run(),
+            can_open_campaign=_can_open_campaign(),
             seeded_puzzle_seed=session.get("seeded_puzzle_seed"),
             dashboard_messages=dashboard_messages,
             guest_campaign_signup_prompt=(

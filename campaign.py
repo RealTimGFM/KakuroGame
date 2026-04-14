@@ -76,6 +76,19 @@ class Campaign:
         session["campaign_current_difficulty"] = diff
         session["campaign_current_level"] = lvl
 
+        uid = session.get("user_id")
+        if isinstance(uid, int):
+            started_at = session.get("campaign_started_at")
+            self.db.save_campaign_run(
+                uid,
+                active=True,
+                difficulty=diff,
+                level=lvl,
+                seed=None,
+                started_at=float(started_at) if started_at is not None else None,
+                ineligible=1 if session.get("campaign_ineligible", False) is True else 0,
+            )
+
         return {
             "difficulty": diff,
             "level": lvl,
@@ -106,19 +119,15 @@ class Campaign:
 
         uid = session.get("user_id")
         if isinstance(uid, int):
-            self.db.ensure_progression_row(uid)
-            con = self.db.get_connection()
-            cur = con.cursor()
-            cur.execute(
-                """
-                UPDATE progression
-                SET campaign_ineligible = 0, updated_at = CURRENT_TIMESTAMP
-                WHERE user_id = ?
-            """,
-                (uid,),
+            self.db.save_campaign_run(
+                uid,
+                active=True,
+                difficulty=None,
+                level=None,
+                seed=None,
+                started_at=float(session["campaign_started_at"]),
+                ineligible=0,
             )
-            con.commit()
-            con.close()
 
     def loadLevelPuzzle(self):
         difficulty = self.normalizeDifficulty(
@@ -141,6 +150,19 @@ class Campaign:
             session["campaign_seen_seeds"] = seen
 
         session["campaign_current_seed"] = payload["seed"]
+
+        uid = session.get("user_id")
+        if isinstance(uid, int):
+            started_at = session.get("campaign_started_at")
+            self.db.save_campaign_run(
+                uid,
+                active=True,
+                difficulty=difficulty,
+                level=level,
+                seed=payload["seed"],
+                started_at=float(started_at) if started_at is not None else None,
+                ineligible=1 if session.get("campaign_ineligible", False) is True else 0,
+            )
         return payload
 
     def getRandomPuzzle(self, difficulty: str, level: int, excluded_seeds=None):

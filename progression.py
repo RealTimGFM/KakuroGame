@@ -209,6 +209,9 @@ class Progression:
             ):
                 session.pop(key, None)
 
+            if isinstance(uid, int):
+                self.db.clear_campaign_run(uid)
+
             return {
                 "finished": True,
                 "elapsed_time": total_time,
@@ -233,6 +236,10 @@ class Progression:
                 "play_context",
             ):
                 session.pop(key, None)
+
+            uid = session.get("user_id")
+            if isinstance(uid, int):
+                self.db.clear_campaign_run(uid)
 
             return {
                 "finished": True,
@@ -278,6 +285,10 @@ class Progression:
             "play_context",
         ):
             session.pop(key, None)
+
+        uid = session.get("user_id")
+        if isinstance(uid, int):
+            self.db.clear_campaign_run(uid)
 
         self.setMode("Single Puzzle")
 
@@ -377,18 +388,7 @@ class Progression:
         if isinstance(uid, int):
             self.db.ensure_progression_row(uid)
             self.db.set_mode(uid, "Campaign")
-            con = self.db.get_connection()
-            cur = con.cursor()
-            cur.execute(
-                """
-                UPDATE progression
-                SET campaign_ineligible = 0, updated_at = CURRENT_TIMESTAMP
-                WHERE user_id = ?
-            """,
-                (uid,),
-            )
-            con.commit()
-            con.close()
+            self.db.clear_campaign_run(uid)
         else:
             session["guest_mode"] = "Campaign"
             session["guest_difficulty"] = "Learner"
@@ -403,18 +403,17 @@ class Progression:
         uid = session.get("user_id")
         if isinstance(uid, int):
             self.db.ensure_progression_row(uid)
-            con = self.db.get_connection()
-            cur = con.cursor()
-            cur.execute(
-                """
-                UPDATE progression
-                SET campaign_ineligible = 1, updated_at = CURRENT_TIMESTAMP
-                WHERE user_id = ?
-            """,
-                (uid,),
+            self.db.save_campaign_run(
+                uid,
+                active=True,
+                difficulty=session.get("campaign_current_difficulty"),
+                level=int(session.get("campaign_current_level", 1) or 1),
+                seed=session.get("campaign_current_seed"),
+                started_at=float(session.get("campaign_started_at"))
+                if session.get("campaign_started_at") is not None
+                else None,
+                ineligible=1,
             )
-            con.commit()
-            con.close()
 
         return True
 

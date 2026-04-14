@@ -17,7 +17,7 @@
         </div>
 
         <div class="nav-center">
-            {% if has_current_campaign_run %}
+            {% if can_open_campaign %}
             <a href="{{ url_for('campaign_play') }}" class="nav-link">Campaign</a>
             {% else %}
             <span class="nav-link nav-link-disabled">Campaign</span>
@@ -58,7 +58,7 @@
                 <div class="dashboard-panel">
                     <h2><span class="section-title-icon">></span>Menu Guide</h2>
                     <div class="menu-list">
-                        <div class="menu-list-item"><strong>Campaign</strong><span>Continue your current run when one is active.</span></div>
+                        <div class="menu-list-item"><strong>Campaign</strong><span>Continue your saved campaign progression, or resume the current run when one is active.</span></div>
                         <div class="menu-list-item"><strong>New Run</strong><span>Start a fresh campaign from the beginning.</span></div>
                         <div class="menu-list-item"><strong>Play a Puzzle</strong><span>Open a specific board by seed and compare times.</span></div>
                         <div class="menu-list-item"><strong>Setting</strong><span>Update account details when you are signed in.</span></div>

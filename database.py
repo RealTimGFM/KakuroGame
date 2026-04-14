@@ -145,6 +145,31 @@ class Database:
             "campaign_ineligible INTEGER NOT NULL DEFAULT 0",
         )
         self._ensure_column(
+            "progression",
+            "run_active",
+            "run_active INTEGER NOT NULL DEFAULT 0",
+        )
+        self._ensure_column(
+            "progression",
+            "run_current_difficulty",
+            "run_current_difficulty TEXT",
+        )
+        self._ensure_column(
+            "progression",
+            "run_current_level",
+            "run_current_level INTEGER",
+        )
+        self._ensure_column(
+            "progression",
+            "run_current_seed",
+            "run_current_seed TEXT",
+        )
+        self._ensure_column(
+            "progression",
+            "run_started_at",
+            "run_started_at REAL",
+        )
+        self._ensure_column(
             "user_puzzles",
             "solution_shown",
             "solution_shown INTEGER NOT NULL DEFAULT 0",
@@ -306,6 +331,68 @@ class Database:
         row = cur.fetchone()
         con.close()
         return row
+
+    def save_campaign_run(
+        self,
+        user_id: int,
+        *,
+        active: bool,
+        difficulty=None,
+        level=None,
+        seed=None,
+        started_at=None,
+        ineligible=None,
+    ):
+        self.ensure_progression_row(user_id)
+
+        con = self.get_connection()
+        cur = con.cursor()
+        cur.execute(
+            """
+            UPDATE progression
+            SET run_active = ?,
+                run_current_difficulty = ?,
+                run_current_level = ?,
+                run_current_seed = ?,
+                run_started_at = ?,
+                campaign_ineligible = COALESCE(?, campaign_ineligible),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = ?
+        """,
+            (
+                1 if active else 0,
+                difficulty,
+                level,
+                seed,
+                started_at,
+                ineligible,
+                user_id,
+            ),
+        )
+        con.commit()
+        con.close()
+
+    def clear_campaign_run(self, user_id: int):
+        self.ensure_progression_row(user_id)
+
+        con = self.get_connection()
+        cur = con.cursor()
+        cur.execute(
+            """
+            UPDATE progression
+            SET run_active = 0,
+                run_current_difficulty = NULL,
+                run_current_level = NULL,
+                run_current_seed = NULL,
+                run_started_at = NULL,
+                campaign_ineligible = 0,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = ?
+        """,
+            (user_id,),
+        )
+        con.commit()
+        con.close()
 
     # Puzzles
     def get_puzzle_by_seed(self, seed: str):
