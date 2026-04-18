@@ -185,6 +185,12 @@
                     </form>
                     {% endif %}
                     {% else %}
+                    <form method="POST" action="{{ url_for('seed_back') }}" class="skip-leave-warning">
+                        <button type="submit" class="btn btn-secondary">
+                            <span class="button-icon">&lt;</span>
+                            Back to Dashboard
+                        </button>
+                    </form>
                     <form method="POST" action="{{ url_for('seed_complete') }}" class="skip-leave-warning">
                         <button type="submit" class="btn btn-secondary">
                             <span class="button-icon">=</span>

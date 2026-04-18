@@ -15,6 +15,7 @@ from progression import Progression
 import os
 import json as _json
 import time as _time
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 
 # Parse puzzle_data JSON string and build a 2D grid list for template rendering.
@@ -86,18 +87,34 @@ def build_puzzle_grid(
     return grid, w, h
 
 
-def create_app(db_path=None, testing=False):
+def _env_flag(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def create_app(db_path=None, testing=False, database_url=None):
     app = Flask(__name__)
-    app.secret_key = "kakuro_secret_key_2026"
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
+    app.secret_key = os.getenv("SECRET_KEY", "dev-secret-key-change-me")
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    app.config["SESSION_COOKIE_SECURE"] = _env_flag("SESSION_COOKIE_SECURE", False)
 
     if testing:
         app.config["TESTING"] = True
         app.secret_key = "test_secret"
+        app.config["SESSION_COOKIE_SECURE"] = False
 
-    db = Database(db_path=db_path)
+    db = Database(db_path=db_path, database_url=database_url)
     db.create_tables()
+    if not testing and _env_flag("AUTO_LOAD_PUZZLES", default=True):
+        db.ensure_default_puzzles()
 
     app.config["DB_PATH"] = db.db_path
+    app.config["DB_BACKEND"] = db.backend
+    app.config["DATABASE_URL"] = db.database_url
 
     user_service = RegisteredUser(db)
     progression_service = Progression(db)
@@ -167,6 +184,24 @@ def create_app(db_path=None, testing=False):
             and session.get("play_context") == "campaign"
             and session.get("seeded_puzzle_locked", False) is True
         )
+
+    def _clear_seeded_puzzle_state(keep_campaign_context=False):
+        for key in (
+            "seeded_puzzle_seed",
+            "seeded_puzzle_board",
+            "seeded_puzzle_invalid_positions",
+            "seeded_puzzle_locked",
+            "seeded_puzzle_started_at",
+            "seeded_puzzle_stopped_at",
+            "seeded_puzzle_elapsed_time",
+            "seeded_puzzle_result",
+            "seeded_puzzle_result_type",
+            "post_solve_signup_seed",
+        ):
+            session.pop(key, None)
+
+        if not keep_campaign_context:
+            session.pop("play_context", None)
 
     def _restore_saved_campaign_run():
         user_id = session.get("user_id")
@@ -610,6 +645,10 @@ def create_app(db_path=None, testing=False):
     def seed_back():
         if not _is_authenticated():
             return redirect(url_for("login"))
+
+        _clear_seeded_puzzle_state(
+            keep_campaign_context=(session.get("play_context") == "campaign")
+        )
         return redirect(url_for("dashboard"))
 
     # Complete a seeded puzzle: restore official progression and return to dashboard.
@@ -664,4 +703,8 @@ def create_app(db_path=None, testing=False):
 
 if __name__ == "__main__":
     app = create_app()
-    app.run(debug=True)
+    app.run(
+        host="0.0.0.0",
+        port=int(os.getenv("PORT", "5000")),
+        debug=_env_flag("FLASK_DEBUG", default=False),
+    )

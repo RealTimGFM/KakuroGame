@@ -338,21 +338,9 @@ class Puzzle:
                 uid = session.get("user_id")
                 if isinstance(uid, int):
                     self.db.ensure_progression_row(uid)
-                    self.db.mark_user_played_seed(uid, seed)
-                    con = self.db.get_connection()
-                    cur = con.cursor()
-                    cur.execute(
-                        """
-                        UPDATE user_puzzles
-                        SET completed_at = CURRENT_TIMESTAMP,
-                            last_elapsed_time = ?,
-                            solution_shown = 1
-                        WHERE user_id = ? AND seed = ?
-                    """,
-                        (float(elapsed_time), uid, seed),
+                    self.db.update_user_puzzle_solution_shown(
+                        uid, seed, float(elapsed_time)
                     )
-                    con.commit()
-                    con.close()
 
         return {
             "ok": True,
@@ -464,6 +452,7 @@ class Puzzle:
             "result": session.get("seeded_puzzle_result"),
             "leaderboard": [],
         }
+
     def restartPuzzle(self):
         if not self._row:
             seed = session.get("seeded_puzzle_seed")

@@ -2,18 +2,111 @@ import json
 import os
 import sqlite3
 import sys
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+
+
+class _PostgresCompatCursor:
+    def __init__(self, cursor):
+        self._cursor = cursor
+
+    def execute(self, query, params=None):
+        sql = str(query or "").strip()
+        normalized = " ".join(sql.split())
+
+        if normalized == "INSERT OR IGNORE INTO user_puzzles (user_id, seed) VALUES (?, ?)":
+            sql = (
+                "INSERT INTO user_puzzles (user_id, seed) VALUES (%s, %s) "
+                "ON CONFLICT (user_id, seed) DO NOTHING"
+            )
+        else:
+            sql = sql.replace("?", "%s")
+
+        self._cursor.execute(sql, params or ())
+        return self
+
+    def fetchone(self):
+        return self._cursor.fetchone()
+
+    def fetchall(self):
+        return self._cursor.fetchall()
+
+    def close(self):
+        self._cursor.close()
+
+    def __getattr__(self, name):
+        return getattr(self._cursor, name)
+
+
+class _PostgresCompatConnection:
+    def __init__(self, connection):
+        self._connection = connection
+
+    def cursor(self):
+        return _PostgresCompatCursor(self._connection.cursor())
+
+    def commit(self):
+        self._connection.commit()
+
+    def rollback(self):
+        self._connection.rollback()
+
+    def close(self):
+        self._connection.close()
+
+    def __getattr__(self, name):
+        return getattr(self._connection, name)
 
 
 class Database:
-    def __init__(self, db_name="kakuro.db", db_path=None):
-        if db_path:
+    def __init__(self, db_name="kakuro.db", db_path=None, database_url=None):
+        env_database_url = os.getenv("DATABASE_URL")
+        selected_database_url = database_url
+
+        if selected_database_url is None and not db_path:
+            selected_database_url = env_database_url
+
+        self.database_url = self._normalize_database_url(selected_database_url)
+        self.backend = "postgres" if self.database_url else "sqlite"
+
+        if self.backend == "sqlite" and db_path:
             self.db_path = db_path
-        else:
+        elif self.backend == "sqlite":
             self.db_path = os.path.join(
                 os.path.dirname(os.path.abspath(__file__)), db_name
             )
+        else:
+            self.db_path = None
+
+    @staticmethod
+    def _normalize_database_url(database_url):
+        raw = str(database_url or "").strip()
+        if not raw:
+            return None
+
+        if raw.startswith("postgres://"):
+            raw = "postgresql://" + raw[len("postgres://") :]
+
+        parsed = urlparse(raw)
+        query_items = dict(parse_qsl(parsed.query, keep_blank_values=True))
+        query_items.setdefault("sslmode", "require")
+        return urlunparse(parsed._replace(query=urlencode(query_items)))
+
+    def _connect_postgres(self):
+        try:
+            import psycopg
+            from psycopg.rows import dict_row
+        except ImportError as exc:
+            raise RuntimeError(
+                "PostgreSQL support requires psycopg. Install dependencies from requirements.txt."
+            ) from exc
+
+        connection = psycopg.connect(self.database_url, row_factory=dict_row)
+        return _PostgresCompatConnection(connection)
 
     def get_connection(self):
+        if self.backend == "postgres":
+            return self._connect_postgres()
+
         con = sqlite3.connect(self.db_path)
         con.row_factory = sqlite3.Row
         con.execute("PRAGMA foreign_keys = ON;")
@@ -22,8 +115,23 @@ class Database:
     def _ensure_column(self, table_name: str, column_name: str, column_sql: str):
         con = self.get_connection()
         cur = con.cursor()
-        cur.execute(f"PRAGMA table_info({table_name})")
-        cols = [row["name"] for row in cur.fetchall()]
+
+        if self.backend == "postgres":
+            cur.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = ?
+                  AND column_name = ?
+                """,
+                (table_name, column_name),
+            )
+            cols = [row["column_name"] for row in cur.fetchall()]
+        else:
+            cur.execute(f"PRAGMA table_info({table_name})")
+            cols = [row["name"] for row in cur.fetchall()]
+
         if column_name not in cols:
             cur.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_sql}")
             con.commit()
@@ -33,97 +141,199 @@ class Database:
         con = self.get_connection()
         cur = con.cursor()
 
-        cur.execute(
+        if self.backend == "postgres":
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS users (
+                    id BIGSERIAL PRIMARY KEY,
+                    username TEXT UNIQUE NOT NULL,
+                    email TEXT UNIQUE NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                )
             """
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT UNIQUE NOT NULL,
-                email TEXT UNIQUE NOT NULL,
-                password_hash TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
-        """
-        )
 
-        cur.execute(
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS progression (
+                    user_id BIGINT PRIMARY KEY,
+                    mode TEXT NOT NULL DEFAULT 'Campaign',
+                    difficulty TEXT NOT NULL DEFAULT 'Learner',
+                    campaign_level INTEGER NOT NULL DEFAULT 1,
+                    campaign_ineligible INTEGER NOT NULL DEFAULT 0,
+                    run_active INTEGER NOT NULL DEFAULT 0,
+                    run_current_difficulty TEXT,
+                    run_current_level INTEGER,
+                    run_current_seed TEXT,
+                    run_started_at DOUBLE PRECISION,
+                    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+                )
             """
-            CREATE TABLE IF NOT EXISTS progression (
-                user_id INTEGER PRIMARY KEY,
-                mode TEXT NOT NULL DEFAULT 'Campaign',
-                difficulty TEXT NOT NULL DEFAULT 'Learner',
-                campaign_level INTEGER NOT NULL DEFAULT 1,
-                campaign_ineligible INTEGER NOT NULL DEFAULT 0,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
             )
-        """
-        )
 
-        cur.execute(
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS puzzles (
+                    seed TEXT PRIMARY KEY,
+                    puzzle_data TEXT NOT NULL,
+                    difficulty TEXT,
+                    campaign_level INTEGER
+                )
             """
-            CREATE TABLE IF NOT EXISTS puzzles (
-                seed TEXT PRIMARY KEY,
-                puzzle_data TEXT NOT NULL,
-                difficulty TEXT,
-                campaign_level INTEGER
             )
-        """
-        )
 
-        cur.execute(
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS puzzle_solutions (
+                    seed TEXT PRIMARY KEY,
+                    solution_data TEXT NOT NULL,
+                    FOREIGN KEY(seed) REFERENCES puzzles(seed) ON DELETE CASCADE
+                )
             """
-            CREATE TABLE IF NOT EXISTS puzzle_solutions (
-                seed TEXT PRIMARY KEY,
-                solution_data TEXT NOT NULL,
-                FOREIGN KEY(seed) REFERENCES puzzles(seed) ON DELETE CASCADE
             )
-        """
-        )
 
-        cur.execute(
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS user_puzzles (
+                    id BIGSERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    seed TEXT NOT NULL,
+                    played_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                    solution_shown INTEGER NOT NULL DEFAULT 0,
+                    completed_at TIMESTAMPTZ,
+                    last_elapsed_time DOUBLE PRECISION,
+                    best_elapsed_time DOUBLE PRECISION,
+                    UNIQUE(user_id, seed),
+                    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    FOREIGN KEY(seed) REFERENCES puzzles(seed) ON DELETE CASCADE
+                )
             """
-            CREATE TABLE IF NOT EXISTS user_puzzles (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                seed TEXT NOT NULL,
-                played_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                solution_shown INTEGER NOT NULL DEFAULT 0,
-                UNIQUE(user_id, seed),
-                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
-                FOREIGN KEY(seed) REFERENCES puzzles(seed) ON DELETE CASCADE
             )
-        """
-        )
 
-        cur.execute(
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS leaderboard (
+                    id BIGSERIAL PRIMARY KEY,
+                    seed TEXT NOT NULL,
+                    user_id BIGINT NOT NULL,
+                    username TEXT NOT NULL,
+                    elapsed_time DOUBLE PRECISION NOT NULL,
+                    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(seed, user_id),
+                    FOREIGN KEY(seed) REFERENCES puzzles(seed) ON DELETE CASCADE,
+                    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+                )
             """
-            CREATE TABLE IF NOT EXISTS leaderboard (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                seed TEXT NOT NULL,
-                user_id INTEGER NOT NULL,
-                username TEXT NOT NULL,
-                elapsed_time REAL NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(seed, user_id),
-                FOREIGN KEY(seed) REFERENCES puzzles(seed) ON DELETE CASCADE,
-                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
             )
-        """
-        )
-        cur.execute(
+
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS campaign_leaderboard (
+                    id BIGSERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL UNIQUE,
+                    username TEXT NOT NULL,
+                    elapsed_time DOUBLE PRECISION NOT NULL,
+                    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+                )
             """
-            CREATE TABLE IF NOT EXISTS campaign_leaderboard (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL UNIQUE,
-                username TEXT NOT NULL,
-                elapsed_time REAL NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
             )
-        """
-        )
+        else:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT UNIQUE NOT NULL,
+                    email TEXT UNIQUE NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """
+            )
+
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS progression (
+                    user_id INTEGER PRIMARY KEY,
+                    mode TEXT NOT NULL DEFAULT 'Campaign',
+                    difficulty TEXT NOT NULL DEFAULT 'Learner',
+                    campaign_level INTEGER NOT NULL DEFAULT 1,
+                    campaign_ineligible INTEGER NOT NULL DEFAULT 0,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+                )
+            """
+            )
+
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS puzzles (
+                    seed TEXT PRIMARY KEY,
+                    puzzle_data TEXT NOT NULL,
+                    difficulty TEXT,
+                    campaign_level INTEGER
+                )
+            """
+            )
+
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS puzzle_solutions (
+                    seed TEXT PRIMARY KEY,
+                    solution_data TEXT NOT NULL,
+                    FOREIGN KEY(seed) REFERENCES puzzles(seed) ON DELETE CASCADE
+                )
+            """
+            )
+
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS user_puzzles (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    seed TEXT NOT NULL,
+                    played_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    solution_shown INTEGER NOT NULL DEFAULT 0,
+                    UNIQUE(user_id, seed),
+                    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    FOREIGN KEY(seed) REFERENCES puzzles(seed) ON DELETE CASCADE
+                )
+            """
+            )
+
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS leaderboard (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    seed TEXT NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    username TEXT NOT NULL,
+                    elapsed_time REAL NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(seed, user_id),
+                    FOREIGN KEY(seed) REFERENCES puzzles(seed) ON DELETE CASCADE,
+                    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+                )
+            """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS campaign_leaderboard (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL UNIQUE,
+                    username TEXT NOT NULL,
+                    elapsed_time REAL NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+                )
+            """
+            )
         con.commit()
         con.close()
 
@@ -195,12 +405,25 @@ class Database:
     def create_user(self, username: str, email: str, password_hash: str) -> int:
         con = self.get_connection()
         cur = con.cursor()
-        cur.execute(
-            "INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)",
-            (username, email, password_hash),
-        )
-        con.commit()
-        user_id = cur.lastrowid
+        if self.backend == "postgres":
+            cur.execute(
+                """
+                INSERT INTO users (username, email, password_hash)
+                VALUES (?, ?, ?)
+                RETURNING id
+                """,
+                (username, email, password_hash),
+            )
+            row = cur.fetchone()
+            user_id = row["id"]
+            con.commit()
+        else:
+            cur.execute(
+                "INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)",
+                (username, email, password_hash),
+            )
+            con.commit()
+            user_id = cur.lastrowid
         con.close()
         return user_id
 
@@ -444,9 +667,39 @@ class Database:
     def mark_user_played_seed(self, user_id: int, seed: str):
         con = self.get_connection()
         cur = con.cursor()
+        if self.backend == "postgres":
+            cur.execute(
+                """
+                INSERT INTO user_puzzles (user_id, seed)
+                VALUES (?, ?)
+                ON CONFLICT (user_id, seed) DO NOTHING
+                """,
+                (user_id, seed),
+            )
+        else:
+            cur.execute(
+                "INSERT OR IGNORE INTO user_puzzles (user_id, seed) VALUES (?, ?)",
+                (user_id, seed),
+            )
+        con.commit()
+        con.close()
+
+    def update_user_puzzle_solution_shown(
+        self, user_id: int, seed: str, elapsed_time: float
+    ):
+        self.mark_user_played_seed(user_id, seed)
+
+        con = self.get_connection()
+        cur = con.cursor()
         cur.execute(
-            "INSERT OR IGNORE INTO user_puzzles (user_id, seed) VALUES (?, ?)",
-            (user_id, seed),
+            """
+            UPDATE user_puzzles
+            SET completed_at = CURRENT_TIMESTAMP,
+                last_elapsed_time = ?,
+                solution_shown = 1
+            WHERE user_id = ? AND seed = ?
+        """,
+            (float(elapsed_time), user_id, seed),
         )
         con.commit()
         con.close()
@@ -625,11 +878,61 @@ class Database:
         con.close()
         return rows
 
+    def count_puzzles(self) -> int:
+        con = self.get_connection()
+        cur = con.cursor()
+        cur.execute("SELECT COUNT(*) AS total FROM puzzles")
+        row = cur.fetchone()
+        con.close()
+        return int(row["total"] if row and row["total"] is not None else 0)
+
+    def ensure_default_puzzles(self, import_path=None):
+        if self.count_puzzles() > 0:
+            return False
+
+        if import_path is None:
+            import_path = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), "puzzles_import.json"
+            )
+
+        if not os.path.exists(import_path):
+            return False
+
+        from puzzle_importer import import_puzzles_from_file
+
+        import_puzzles_from_file(self, import_path)
+        return True
+
+    def drop_all_tables(self):
+        if self.backend == "sqlite":
+            if self.db_path and os.path.exists(self.db_path):
+                os.remove(self.db_path)
+                return True
+            return False
+
+        con = self.get_connection()
+        cur = con.cursor()
+
+        for table_name in (
+            "campaign_leaderboard",
+            "leaderboard",
+            "user_puzzles",
+            "puzzle_solutions",
+            "puzzles",
+            "progression",
+            "users",
+        ):
+            cur.execute(f"DROP TABLE IF EXISTS {table_name} CASCADE")
+
+        con.commit()
+        con.close()
+        return True
+
 
 def init_db_only():
     db = Database()
     db.create_tables()
-    print(f"database ready: {db.db_path}")
+    print(f"database ready ({db.backend})")
 
 
 def load_puzzles(import_path=None):
@@ -656,14 +959,17 @@ def reset_db(import_path=None):
 
     db = Database()
 
-    if os.path.exists(db.db_path):
-        os.remove(db.db_path)
-        print(f"old database deleted: {db.db_path}")
+    if db.backend == "sqlite":
+        if db.drop_all_tables():
+            print(f"old database deleted: {db.db_path}")
+        else:
+            print("no old database found, creating a new one")
     else:
-        print("no old database found, creating a new one")
+        db.drop_all_tables()
+        print("existing PostgreSQL tables dropped")
 
     db.create_tables()
-    print(f"new database created: {db.db_path}")
+    print(f"new database created ({db.backend})")
 
     if import_path is None:
         import_path = os.path.join(

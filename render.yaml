@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: kakuro-game
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn wsgi:app
+    healthCheckPath: /login
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: AUTO_LOAD_PUZZLES
+        value: "true"
+      - key: SESSION_COOKIE_SECURE
+        value: "true"
