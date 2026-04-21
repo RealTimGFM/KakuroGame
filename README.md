@@ -104,3 +104,10 @@ On startup, the app:
 - imports puzzles from `puzzles_import.json` if the puzzle catalog is empty
 
 That means a fresh Neon database can be deployed without a separate manual migration step for this project.
+
+## Contributors
+
+- Tim
+- Hassan
+- Chunkyboi (Ben)
+- Hissa (Hieu)
