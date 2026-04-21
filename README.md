@@ -110,4 +110,4 @@ That means a fresh Neon database can be deployed without a separate manual migra
 - Tim
 - Hassan
 - Chunkyboi (Ben)
-- Hissa (Hieu)
+- Hissa (HieuGROK)
